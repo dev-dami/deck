@@ -820,6 +820,11 @@ body:has(.shell) .backdrop {
 body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   visibility: hidden;
 }
+/* With the threads in a bar across the top there is no column: the
+   picture shows behind the bar's glass (--topbar-h, ui/ThreadBar.tsx). */
+:root[data-sidebar="top"] body:has(.shell) .backdrop {
+  clip-path: inset(var(--gutter) var(--gutter) calc(100% - var(--gutter) - var(--topbar-h)) var(--gutter) round var(--panel-radius));
+}
 /* A print shows its ground until it has drawn. */
 .art-print {
   background-color: var(--print-ground, var(--plate-lo, #1d2240));
@@ -2259,6 +2264,14 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 .shell[data-sidebar="right"] {
   flex-direction: row-reverse;
 }
+/* The threads in a bar across the top: the window is a column, the bar
+   over the room. */
+.shell[data-sidebar="top"] {
+  flex-direction: column;
+}
+.shell[data-sidebar="top"] > :is(.room-sheet, .workspace) {
+  min-height: 0;
+}
 
 /* The pane the keys moved to wears a ring, while there is more than one. */
 .stack[data-focused] {
@@ -2829,9 +2842,16 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 :root[data-material="smoke"] .shell[data-sidebar="right"] > nav.sidebar > .liquid {
   box-shadow: inset 1px 0 0 var(--hairline);
 }
+:root[data-material="smoke"] .shell[data-sidebar="top"] > nav.sidebar > .liquid {
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
 /* The picture fills the room's side of the window. */
 :root[data-material="smoke"] body:has(.shell) .backdrop {
   clip-path: inset(0 0 0 var(--sidebar-w));
+}
+/* Under the threads' top bar it fills the room below it. */
+:root[data-material="smoke"][data-sidebar="top"] body:has(.shell) .backdrop {
+  clip-path: inset(var(--topbar-h) 0 0 0);
 }
 :root[data-material="smoke"] body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   visibility: visible;
@@ -3080,51 +3100,142 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* ---- The sidebar (ui/Sidebar.tsx, design-glass.md section 13) ----------
-   After T3 Code's Obsidian theme: in smoked glass the sidebar is darker
-   than the room, nearly black; what is chosen is a card of soft grey with
-   a faint rim, and the rest is quiet grey type. New thread is a card too,
-   at the top. Project tiles lose their colour, the footer sits on a
-   hairline, and the touch of blue is the accent's alone. */
-.sidebar .new-thread {
-  background-color: color-mix(in srgb, var(--text) 7%, transparent);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
+   After T3 Code's Obsidian theme, and kept calm: the threads and little
+   else. The header holds a few faint glyphs (the inbox, Search, New
+   thread, Hide), the projects' heading is quiet type, a thread is a plain
+   grey row about 30px tall, and the open one is a card of soft grey with
+   a faint rim (--row-radius). The foot's glyphs sit on no ground. In
+   smoked glass the column is darker than the room, nearly black, and one
+   hairline parts it from the room. Project tiles lose their colour, and
+   the touch of blue is the accent's alone. */
+:root {
+  --row-radius: 10px;
+  --topbar-h: 40px;
 }
-.sidebar .new-thread:hover {
-  background-color: color-mix(in srgb, var(--text) 10%, transparent);
+:root[data-material="smoke"] {
+  --row-radius: 12px;
 }
 :root[data-material="smoke"][data-mode="dark"] {
   --sidebar: color-mix(in oklab, var(--canvas) 45%, #000);
 }
-:root[data-material="smoke"] .sidebar {
+.sidebar {
   --hover: color-mix(in srgb, var(--text) 4.5%, transparent);
-  --selected: color-mix(in srgb, var(--text) 9%, transparent);
+  --selected: color-mix(in srgb, var(--text) 8%, transparent);
+  --row-rim: color-mix(in srgb, var(--text) 7%, transparent);
 }
-:root[data-material="smoke"] .sidebar :is(.session > [role="button"], .shared-group [role="button"], button) {
-  border-radius: 10px;
+:root[data-mode="light"] .sidebar {
+  --hover: color-mix(in srgb, var(--text) 4%, transparent);
+  --selected: color-mix(in srgb, var(--text) 7%, transparent);
+  --row-rim: color-mix(in srgb, var(--text) 8%, transparent);
 }
-:root[data-material="smoke"] .sidebar .session > [role="button"] {
-  min-height: 2.25rem;
+/* The glyphs of the header and the foot: faint until the pointer is on
+   them. */
+.sidebar :is(.side-head, .side-foot, .bar-tools) :is(button, [data-slot="button"]):not([aria-current="page"]):not([aria-pressed="true"]) {
+  color: var(--text-faint);
 }
-:root[data-material="smoke"] .sidebar :is(.session.open > [role="button"], [aria-current="page"]) {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
-}
-:root[data-material="smoke"] .sidebar .session:not(.open) > [role="button"] .min-w-0.truncate:first-child,
-:root[data-material="smoke"] .sidebar .session:not(.open) > [role="button"] {
-  color: var(--text-muted);
-}
-:root[data-material="smoke"] .sidebar .session:not(.open) > [role="button"]:hover {
+.sidebar :is(.side-head, .side-foot, .bar-tools) :is(button, [data-slot="button"]):hover {
   color: var(--text);
 }
-:root[data-material="smoke"] .sidebar .project-group {
-  padding-top: 0.5rem;
+/* The open thread, the page in view: a soft card with a faint rim. */
+.sidebar :is(.session.open > [role="button"], [aria-current="page"]) {
+  background-color: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--row-rim);
 }
-:root[data-material="smoke"] .sidebar .project-tile {
+.sidebar .session:not(.open) > .session-main {
+  color: var(--text-muted);
+}
+.sidebar .session:not(.open) > .session-main:hover {
+  color: var(--text);
+}
+.sidebar .project-tile {
   filter: grayscale(1);
   opacity: 0.75;
 }
-:root[data-material="smoke"] .sidebar .side-foot {
-  box-shadow: inset 0 1px 0 var(--hairline);
+/* Rows a little apart from the heading over them, groups a little apart
+   from each other. */
+.sidebar .project-group + .project-group {
+  padding-top: 0.25rem;
+}
+/* In the threads' top bar the open chip is the card; the bar's parts are
+   set apart by a short hairline. */
+.thread-bar .bar-rule {
+  width: 1px;
+  height: 1rem;
+  margin-inline: 0.25rem;
+  flex-shrink: 0;
+  background: var(--hairline);
+}
+.thread-bar .new-thread {
+  background-color: var(--hover);
+}
+.thread-bar .new-thread:hover {
+  background-color: var(--selected);
+}
+.thread-strip[data-fade-start],
+.thread-strip[data-fade-end] {
+  --fade-l: 0px;
+  --fade-r: 0px;
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+}
+.thread-strip[data-fade-start] {
+  --fade-l: 20px;
+}
+.thread-strip[data-fade-end] {
+  --fade-r: 20px;
+}
+
+/* ---- Pages at the side (ui/Shell.tsx, layout/, design-glass.md
+   section 4) ---------------------------------------------------------------
+   Settings, Usage, Team and the inbox open as panes beside the
+   conversation, as tabs of their own stack with a "+" for another; a page
+   there keeps its controls but leaves its name to its tab, and steps
+   tighter. A full page has a button to step aside, in its top right
+   corner, which its header keeps clear of. */
+.page-pane {
+  container-type: inline-size;
+}
+.page-pane :is(.settings, .usage, .team, .inbox) > header:first-child {
+  height: 2.75rem;
+  padding-inline: 0.875rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.page-pane :is(.usage, .team, .inbox) > header:first-child > :is(h1, svg:first-child, span.text-faint) {
+  display: none;
+}
+.page-pane :is(.usage, .team, .inbox) > header:first-child > * {
+  flex-shrink: 0;
+}
+/* An empty page's plate stands over its words in a narrow pane. */
+.page-pane figure.empty {
+  flex-direction: column;
+  align-items: flex-start;
+}
+@container (min-width: 34rem) {
+  .page-pane figure.empty {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+}
+/* In smoked glass the picture fills the room, so the gap between two
+   panes takes their veil too, not a raw slice of the print. */
+:root[data-material="smoke"] .shell .workspace .pane-divider {
+  background: var(--room-veil);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+}
+.page-pane .settings > header:first-child {
+  display: none;
+}
+.page-pane .settings > .min-h-0 > div {
+  padding-inline: 1rem;
+  gap: 2rem;
+}
+.page-pane .page-sections {
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
+.room-sheet[data-page] main > * > header:first-child {
+  padding-right: 3.75rem;
 }
 
 /* ---- The first screens (ui/Welcome.tsx FirstFrame, design-glass.md

@@ -66,7 +66,8 @@ function Entry({ e, now, onOpen }: { e: NotifyEntry; now: number; onOpen: () => 
 // unread notifications, and a popover of the recent ones, newest first. A
 // click opens the room; Mark all read and Clear all keep the list tidy.
 // The inbox stays the place to act on what waits; this is what happened.
-export function NotificationBell({ onSettings }: { onSettings: () => void }) {
+// In the threads' top bar it opens downwards.
+export function NotificationBell({ onSettings, side = "top" }: { onSettings: () => void; side?: "top" | "bottom" }) {
   const list = useNotifyEntries();
   const prefs = usePrefs();
   const [open, setOpen] = useState(false);
@@ -85,7 +86,7 @@ export function NotificationBell({ onSettings }: { onSettings: () => void }) {
       onClose={() => setOpen(false)}
       label="Notifications"
       role="dialog"
-      side="top"
+      side={side}
       className="notifications w-80 p-1.5"
       trigger={
         <Button

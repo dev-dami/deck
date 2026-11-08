@@ -1,7 +1,7 @@
 import { createPortal } from "react-dom";
 import { type CSSProperties, Fragment, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "../lib/cn";
-import { WIDE_PX } from "../ui";
+import { type Page, WIDE_PX } from "../ui";
 import { Button } from "../ui/kit/button";
 import { MenuItem, MenuSeparator, Popover } from "../ui/kit/menu";
 import { segmentItem, segmentTrack } from "../ui/kit/segmented";
@@ -14,8 +14,10 @@ import {
   dock,
   dockRoot,
   type Edge,
+  isPage,
   isPanel,
   isTerminal,
+  pageId,
   type Layout,
   type Node,
   type PaneId,
@@ -63,6 +65,10 @@ export interface PaneOps {
   hide: (group: "panel" | "terminal") => void;
   // A new terminal, as a tab of a stack or beside a pane.
   newTerminal: (stackId: string) => void;
+  // A page at the side (the "+" of the panel's and the pages' tabs), and a
+  // page there popped out to take the room's place.
+  openPage: (p: Page) => void;
+  fullPage: (p: PaneId) => void;
   split: (p: PaneId, edge: Edge) => void;
   zoom: (p: PaneId) => void;
   focus: (p: PaneId) => void;
@@ -95,6 +101,8 @@ interface Ctx {
   slot: (p: PaneId) => (el: HTMLDivElement | null) => (() => void) | undefined;
   startDrag: (p: PaneId, e: React.PointerEvent) => void;
   mac: boolean;
+  // The pages that may open at the side.
+  pages: ReadonlyArray<{ page: Page; label: string; icon: IconType }>;
   // Inside a part that floats over the conversation.
   floating?: boolean;
 }
@@ -322,9 +330,17 @@ function Divider({
   );
 }
 
-type StackKind = "room" | "panel" | "terminal" | "mixed";
+type StackKind = "room" | "panel" | "terminal" | "page" | "mixed";
 const stackKind = (s: Stack): StackKind =>
-  s.panes.includes(CONVERSATION) ? "room" : s.panes.every(isPanel) ? "panel" : s.panes.every(isTerminal) ? "terminal" : "mixed";
+  s.panes.includes(CONVERSATION)
+    ? "room"
+    : s.panes.every(isPanel)
+      ? "panel"
+      : s.panes.every(isTerminal)
+        ? "terminal"
+        : s.panes.every(isPage)
+          ? "page"
+          : "mixed";
 
 function StackView({ node, ctx }: { node: Stack; ctx: Ctx }) {
   const tabs = node.panes.filter(ctx.vis);
@@ -344,6 +360,7 @@ function StackView({ node, ctx }: { node: Stack; ctx: Ctx }) {
       kind === "room" && "room-sheet",
       kind === "panel" && "panel",
       kind === "terminal" && "terminal-drawer",
+      kind === "page" && "page-stack",
     ),
     "data-stack-id": node.id,
     "data-stack": kind,
@@ -374,6 +391,13 @@ function StackView({ node, ctx }: { node: Stack; ctx: Ctx }) {
   if (kind === "terminal") {
     return (
       <section {...props} aria-label="Terminal">
+        {body}
+      </section>
+    );
+  }
+  if (kind === "page") {
+    return (
+      <section {...props} aria-label="Pages">
         {body}
       </section>
     );
@@ -485,11 +509,27 @@ function StackHead({ node, tabs, active, kind, ctx, width }: { node: Stack; tabs
   return (
     <header className={cn("stack-head drag @container/head flex h-12 shrink-0 items-center gap-2 px-2.5", kind === "panel" && "panel-head")}>
       <h2 className="sr-only">{ctx.spec(active).label}</h2>
-      <div className={cn(segmentTrack(), "min-w-0 overflow-x-auto [scrollbar-width:none]")} role="tablist" aria-label={kind === "panel" ? "Room" : "Panes"}>
+      <div
+        className={cn(segmentTrack(), "min-w-0 overflow-x-auto [scrollbar-width:none]")}
+        role="tablist"
+        aria-label={kind === "panel" ? "Room" : kind === "page" ? "Pages" : "Panes"}
+      >
         {tabs.map(tab)}
       </div>
+      {(kind === "panel" || kind === "page") && <AddPage ctx={ctx} />}
       <div className="liquid-clear ml-auto flex shrink-0 items-center gap-0.5 rounded-full p-0.5">
         {menu}
+        {kind === "page" && (
+          <Button
+            variant="ghost-muted"
+            size="icon-xs"
+            aria-label={`Open ${ctx.spec(active).label} full size`}
+            title="Open full size"
+            onClick={() => ctx.ops.fullPage(active)}
+          >
+            <CornersOut />
+          </Button>
+        )}
         {kind === "panel" && (
           <Button
             variant="ghost-muted"
@@ -519,6 +559,50 @@ function StackHead({ node, tabs, active, kind, ctx, width }: { node: Stack; tabs
         </Button>
       </div>
     </header>
+  );
+}
+
+// The "+" after the side panel's and the pages' tabs: a page (Settings,
+// Usage, Team, the inbox) to open at the side, or to bring to the front
+// when it is open already.
+function AddPage({ ctx }: { ctx: Ctx }) {
+  const [open, setOpen] = useState(false);
+  if (ctx.pages.length === 0) return null;
+  const has = new Set(panesOf(ctx.layout.root));
+  return (
+    <Popover
+      open={open}
+      onClose={() => setOpen(false)}
+      label="Open a page at the side"
+      className="w-52"
+      trigger={
+        <Button
+          variant="ghost-muted"
+          size="icon-sm"
+          className="shrink-0"
+          aria-label="Open a page at the side"
+          title="Open a page at the side"
+          aria-expanded={open}
+          onClick={() => setOpen((o) => !o)}
+        >
+          <Plus />
+        </Button>
+      }
+    >
+      {ctx.pages.map(({ page, label, icon: Icon }) => (
+        <MenuItem
+          key={page}
+          onClick={() => {
+            setOpen(false);
+            ctx.ops.openPage(page);
+          }}
+        >
+          <Icon />
+          <span className="flex-1">{label}</span>
+          {has.has(pageId(page)) && <span className="text-2xs text-faint">Open</span>}
+        </MenuItem>
+      ))}
+    </Popover>
   );
 }
 
@@ -665,6 +749,7 @@ export function Workspace({
   ring,
   onFocused,
   mac,
+  pages = [],
 }: {
   ctl: LayoutControl;
   // Whether the window shows a pane now: the terminal's toggle, the side
@@ -681,6 +766,8 @@ export function Workspace({
   // The person clicked into a pane, or the focus went into it.
   onFocused: (p: PaneId, pointer: boolean) => void;
   mac: boolean;
+  // The pages that may open at the side, for the tabs' "+".
+  pages?: ReadonlyArray<{ page: Page; label: string; icon: IconType }>;
 }) {
   const { layout } = ctl;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -786,7 +873,7 @@ export function Workspace({
   );
   // The top-left stack clears a Mac's traffic lights when nothing else does.
   const corner = stacksOf(layout.root).find((s) => s.panes.some(vis))?.id ?? null;
-  const ctx: Ctx = { layout, ctl, vis, spec, ops, float, focused, ring, corner, slot, startDrag, mac };
+  const ctx: Ctx = { layout, ctl, vis, spec, ops, float, focused, ring, corner, slot, startDrag, mac, pages };
   const all = panesOf(layout.root);
   const shownPanes = new Set(stacksOf(layout.root).flatMap((s) => {
     const tabs = s.panes.filter(vis);

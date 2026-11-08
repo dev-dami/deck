@@ -210,7 +210,15 @@ describe("aspects and presets", () => {
     });
     expect(merge({ sidebarWidth: 9000 }).sidebarWidth).toBe(420);
     expect(merge({ sidebarWidth: 10 }).sidebarWidth).toBe(208);
-    expect(merge({ sidebarSide: "top", panelDock: "under" })).toMatchObject({ sidebarSide: "left", panelDock: "opposite" });
+    // The threads in a bar across the top; the column's width waits for
+    // the sidebar to come back.
+    expect(merge({ sidebarSide: "top", sidebarWidth: 300 })).toMatchObject({ sidebarSide: "top", sidebarWidth: 300 });
+    expect(merge({ sidebarSide: "bottom", panelDock: "under" })).toMatchObject({ sidebarSide: "left", panelDock: "opposite" });
+    expect(merge({ sidebarSide: 3 }).sidebarSide).toBe("left");
+    // Pages open in the room's place unless the person put them at the side.
+    expect(merge({}).pages).toBe("full");
+    expect(merge({ pages: "side" }).pages).toBe("side");
+    expect(merge({ pages: "window" }).pages).toBe("full");
   });
 
   test("each process prints from its own set of pictures", () => {

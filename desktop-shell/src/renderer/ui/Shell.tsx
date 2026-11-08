@@ -10,12 +10,16 @@ import { usePrefs } from "../prefs";
 import { gateTeam } from "../teamGate";
 import { panelSlice, shallowEqual, shellSlice, useAppSlice } from "../select";
 import { isSide } from "../sideChat";
-import { PANELS, type Panel, type UiAction } from "../ui";
+import { type Page, PAGES, PANELS, type Panel, SETTINGS_SECTIONS, type SettingsSection, type UiAction } from "../ui";
 import { LayoutMenu } from "../layout/LayoutMenu";
-import { CONVERSATION, isTerminal, type PaneId, terminalNumber } from "../layout/tree";
+import { CONVERSATION, isTerminal, pageId, pageOf, type PaneId, terminalNumber } from "../layout/tree";
 import { useRoomLayout } from "../layout/useRoomLayout";
 import { type PaneSpec, Workspace } from "../layout/Workspace";
-import { ChatCircle, SquareTerminal } from "./icons";
+import { BarChart3, ChatCircle, Inbox as InboxIcon, type IconType, PanelRight, Settings, SquareTerminal, Users } from "./icons";
+import { Button } from "./kit/button";
+import { cn } from "../lib/cn";
+
+const PAGE_ICONS: Record<Page, IconType> = { inbox: InboxIcon, usage: BarChart3, team: Users, settings: Settings };
 import type { Landing } from "./App";
 import { LineComments } from "./DiffView";
 import { useGit } from "./Git";
@@ -149,11 +153,20 @@ export function Shell(props: ShellProps) {
   // side panel's views as panes the person arranges. The side panel's and
   // the terminal's buttons, keys and commands show and hide their panes.
   const { sidebarSide, panelDock } = prefs;
-  const panelSide = (sidebarSide === "left") === (panelDock === "beside") ? "left" : "right";
+  // The threads' top bar has no side: the panel docks as it would with the
+  // sidebar on the left.
+  const panelSide = (sidebarSide !== "right") === (panelDock === "beside") ? "left" : "right";
   const ports = useOpenPorts(api);
-  // Settings, Usage, Team and the inbox take the place of the room.
+  // Settings, Usage, Team and the inbox take the place of the room, or open
+  // at the side of the conversation as panes of its layout (the Layout
+  // setting says which the sidebar's buttons do; a page can go either way
+  // from itself). The Settings pane keeps its own section.
   const teamPage = ui.team && prefs.team;
   const away = ui.settings !== null || ui.usage || teamPage || ui.inbox;
+  const [sideSection, setSideSection] = useState<SettingsSection>("general");
+  const pagesOn = useCallback((p: Page) => p !== "team" || prefs.team, [prefs.team]);
+  const fullPage = (p: Page, section: SettingsSection = sideSection) =>
+    dispatch(p === "settings" ? { type: "settings", section } : { type: p, open: true });
   const rl = useRoomLayout({
     project: source,
     side: panelSide,
@@ -166,7 +179,22 @@ export function Shell(props: ShellProps) {
     available: panelAvailable(c, bridge, ports.length, ui.panel),
     inputRef,
     keys: !away,
+    pagesOn,
+    onFullPage: (p) => fullPage(p),
   });
+  // A page at the side; from a full page, that page leaves the room's place.
+  const sidePage = (p: Page, section?: SettingsSection) => {
+    if (section !== undefined) setSideSection(section);
+    if (ui.settings !== null) dispatch({ type: "settings", section: null });
+    if (ui.usage) dispatch({ type: "usage", open: false });
+    if (ui.team) dispatch({ type: "team", open: false });
+    if (ui.inbox) dispatch({ type: "inbox", open: false });
+    rl.openPage(p);
+  };
+  // The sidebar's page buttons: at the side when the Layout setting says
+  // so and the room shows, else in the room's place.
+  const toSide = prefs.pages === "side" && !away && shared === null;
+  const pageNow: Page | null = ui.settings !== null ? "settings" : ui.usage ? "usage" : teamPage ? "team" : ui.inbox ? "inbox" : null;
   // Opens a panel, never closes it (the panel's own tabs and the menus).
   const openPanel = (p: Panel, path?: string) => {
     rl.openPanel(p);
@@ -183,6 +211,12 @@ export function Shell(props: ShellProps) {
   // How the layout names and marks each pane.
   const paneSpec = (p: PaneId): PaneSpec => {
     if (p === CONVERSATION) return { label: "Conversation", icon: ChatCircle, keepAlive: true, close: null };
+    const page = pageOf(p);
+    if (page !== null) {
+      const label = PAGES.find((x) => x.page === page)?.label ?? page;
+      const extras = page === "inbox" && attention.items.length > 0 && <span className="text-2xs text-warning-foreground tabular-nums">{attention.items.length}</span>;
+      return { label, icon: PAGE_ICONS[page], keepAlive: false, close: `Close ${label}`, extras };
+    }
     if (isTerminal(p)) {
       const n = terminalNumber(rl.ctl.layout.root, p);
       const spec: PaneSpec = { label: `Terminal ${n}`, icon: SquareTerminal, keepAlive: true, close: `Close terminal ${n}` };
@@ -193,6 +227,65 @@ export function Shell(props: ShellProps) {
     const spec: PaneSpec = { label, icon: TAB_ICONS[panel], keepAlive: false, close: `Hide ${label}` };
     return panel === "tasks" ? { ...spec, extras: <PanelBadge c={c} panel={panel} sid={open?.id ?? null} /> } : spec;
   };
+  // A page's content, in the room's place or at the side. At the side the
+  // Settings page picks its section from a strip of its own, and a page's
+  // way back closes its pane.
+  const pageBody = (page: Page, side: boolean) => {
+    if (page === "inbox") {
+      return (
+        <Inbox
+          items={attention.items}
+          mac={mac}
+          onAnswer={attention.onAnswer}
+          onContract={(item, accept) => orToast(attention.onContract(item, accept))}
+          onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
+          onBack={() => (side ? rl.ops.close(pageId("inbox")) : dispatch({ type: "inbox", open: false }))}
+        />
+      );
+    }
+    if (page === "usage") return <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />;
+    if (page === "team") {
+      return (
+        <TeamPage
+          api={api}
+          thread={open}
+          onError={toast}
+          onInfo={info}
+          onOpenShared={openShared}
+          onConnection={() => (side ? setSideSection("connection") : dispatch({ type: "settings", section: "connection" }))}
+          onAddProject={addProject}
+        />
+      );
+    }
+    const section = side ? sideSection : (ui.settings ?? "general");
+    const settings = (
+      <LiveSettings c={c} teammates={teammates} section={section} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
+    );
+    if (!side) return settings;
+    return (
+      <>
+        <div className="page-sections flex h-9 shrink-0 items-center gap-0.5 overflow-x-auto px-2.5 [scrollbar-width:none]" role="tablist" aria-label="Settings sections">
+          {SETTINGS_SECTIONS.map((x) => (
+            <button
+              key={x.section}
+              type="button"
+              role="tab"
+              aria-selected={section === x.section}
+              onClick={() => setSideSection(x.section)}
+              className={cn(
+                "h-6 shrink-0 cursor-pointer whitespace-nowrap rounded-md px-2 text-xs outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                section === x.section ? "bg-selected font-medium text-foreground" : "text-muted-foreground hover:bg-hover hover:text-foreground",
+              )}
+            >
+              {x.label}
+            </button>
+          ))}
+        </div>
+        {settings}
+      </>
+    );
+  };
+  const pageList = useMemo(() => PAGES.filter((x) => pagesOn(x.page)).map((x) => ({ ...x, icon: PAGE_ICONS[x.page] })), [pagesOn]);
   const commands = useShellCommands(
     {
       mac,
@@ -223,13 +316,16 @@ export function Shell(props: ShellProps) {
     if (ui.team && !prefs.team) dispatch({ type: "team", open: false });
   }, [ui.team, prefs.team, dispatch]);
   // What sits at the window's left edge, under a Mac's traffic lights: the
-  // sidebar, else the layout's top-left pane (Workspace marks its stack).
-  const leftmost = sidebarSide === "left" && sidebar ? "sidebar" : away ? "room" : "corner";
+  // sidebar (or the threads' top bar, which clears them itself), else the
+  // layout's top-left pane (Workspace marks its stack).
+  const leftmost = sidebarSide !== "right" && sidebar ? "sidebar" : away ? "room" : "corner";
 
   return (
     // The window is a backdrop with panels on it (docs/design-glass.md,
     // section 4): an 8px gutter, the sidebar's glass, the room's sheet and
-    // the side panel's sheet beside it, in the order the layout says.
+    // the side panel's sheet beside it, in the order the layout says. With
+    // the threads in a top bar the window is a column: the bar, then the
+    // room under it.
     <div
       className="shell relative flex h-full gap-2 p-2"
       data-sidebar={sidebarSide}
@@ -279,10 +375,10 @@ export function Shell(props: ShellProps) {
             onConnect,
             onDisconnect,
             onPalette: () => dispatch({ type: "palette", open: true }),
-            onSettings: (section) => dispatch({ type: "settings", section }),
-            onUsage: () => dispatch({ type: "usage", open: !ui.usage }),
-            onTeam: prefs.team ? () => dispatch({ type: "team", open: !ui.team }) : null,
-            onInbox: () => dispatch({ type: "inbox", open: !ui.inbox }),
+            onSettings: (section) => (toSide && section !== null ? sidePage("settings", section) : dispatch({ type: "settings", section })),
+            onUsage: () => (toSide ? sidePage("usage") : dispatch({ type: "usage", open: !ui.usage })),
+            onTeam: prefs.team ? () => (toSide ? sidePage("team") : dispatch({ type: "team", open: !ui.team })) : null,
+            onInbox: () => (toSide ? sidePage("inbox") : dispatch({ type: "inbox", open: !ui.inbox })),
             onShared: openShared,
             onCollapse: () => setSidebar(false),
           }}
@@ -290,33 +386,22 @@ export function Shell(props: ShellProps) {
       )}
       {away ? (
         // A page in the room's place: one sheet.
-        <div className="room-sheet sheet relative flex min-w-[min(30rem,100%)] flex-1 flex-col overflow-hidden rounded-(--sheet-radius)">
-          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">
-            {ui.inbox ? (
-              <Inbox
-                items={attention.items}
-                mac={mac}
-                onAnswer={attention.onAnswer}
-                onContract={(item, accept) => orToast(attention.onContract(item, accept))}
-                onOpen={(item) => item.room !== null && openRoom(item.project, item.room)}
-                onBack={() => dispatch({ type: "inbox", open: false })}
-              />
-            ) : ui.usage ? (
-              <UsagePage project={api} theme={state.theme} onOpenThread={openSession} onAddProject={addProject} />
-            ) : teamPage ? (
-              <TeamPage
-                api={api}
-                thread={open}
-                onError={toast}
-                onInfo={info}
-                onOpenShared={openShared}
-                onConnection={() => dispatch({ type: "settings", section: "connection" })}
-                onAddProject={addProject}
-              />
-            ) : ui.settings !== null ? (
-              <LiveSettings c={c} teammates={teammates} section={ui.settings} where={where} transport={transport} mac={mac} bridge={bridge} folder={folder} onDisconnect={onDisconnect} />
-            ) : null}
-          </main>
+        <div className="room-sheet sheet relative flex min-w-[min(30rem,100%)] flex-1 flex-col overflow-hidden rounded-(--sheet-radius)" data-page={pageNow ?? undefined}>
+          {/* The page can step aside: to a pane beside the conversation. */}
+          {pageNow !== null && shared === null && (
+            <div className="page-dock no-drag absolute top-3 right-3 z-20">
+              <Button
+                variant="ghost-muted"
+                size="icon-sm"
+                aria-label="Open at the side"
+                title="Open at the side of the thread"
+                onClick={() => sidePage(pageNow, ui.settings ?? undefined)}
+              >
+                <PanelRight />
+              </Button>
+            </div>
+          )}
+          <main className="center flex min-h-0 min-w-0 flex-1 flex-col bg-canvas">{pageNow !== null && pageBody(pageNow, false)}</main>
         </div>
       ) : (
         // The room: its panes as the person laid them out.
@@ -372,6 +457,10 @@ export function Shell(props: ShellProps) {
               </main>
             ) : isTerminal(p) ? (
               api !== undefined && <TerminalPane project={api} slot={p} visible={shown && terminal} onError={toast} />
+            ) : pageOf(p) !== null ? (
+              <div className="page-pane flex min-h-0 min-w-0 flex-1 flex-col" data-page={pageOf(p) ?? undefined}>
+                {pageBody(pageOf(p) as Page, true)}
+              </div>
             ) : (
               <LineComments.Provider value={r.room.comments}>
                 <LivePanelPane
@@ -404,6 +493,7 @@ export function Shell(props: ShellProps) {
           ring={rl.ring}
           onFocused={rl.onFocused}
           mac={mac}
+          pages={shared === null ? pageList : []}
         />
       )}
       {ui.palette && (

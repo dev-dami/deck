@@ -23,6 +23,18 @@ export const PANELS: ReadonlyArray<{ panel: Panel; label: string }> = [
   { panel: "preview", label: "Preview" },
 ];
 
+// The window's pages. Each takes the room's place (UiState below), or opens
+// at the side as a pane of the room's layout beside the conversation
+// (layout/tree.ts pageId), as tabs with a "+" to add another.
+export type Page = "inbox" | "usage" | "team" | "settings";
+
+export const PAGES: ReadonlyArray<{ page: Page; label: string }> = [
+  { page: "inbox", label: "Inbox" },
+  { page: "usage", label: "Usage" },
+  { page: "team", label: "Team" },
+  { page: "settings", label: "Settings" },
+];
+
 // A view this wide shows a diff split and the graph whole: what the side
 // panel widened beside a conversation at its narrowest gets in a 1360px
 // window.

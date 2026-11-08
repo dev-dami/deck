@@ -29,12 +29,19 @@ export type SendKey = "enter" | "mod-enter";
 // "system" follows the operating system's reduced-motion setting.
 export type MotionPref = "system" | "full" | "reduced";
 export type DiffLayout = "unified" | "split";
-// Where the sidebar sits, and where the side panel docks: on the side
+// Where the sidebar sits (a column on the left or the right, or a bar of
+// thread tabs across the top), and where the side panel docks: on the side
 // opposite it, beside it (between it and the room), or floating over the
-// room on the side opposite it.
-export type SidebarSide = "left" | "right";
+// room on the side opposite it. With the top bar, "opposite" is the right
+// and "beside" the left.
+export type SidebarSide = "left" | "right" | "top";
+export const SIDEBAR_SIDES: readonly SidebarSide[] = ["left", "right", "top"];
 export type PanelDock = "opposite" | "beside" | "float";
 export type Density = "comfortable" | "compact";
+// Where Settings, Usage, Team and the inbox open from the sidebar: in the
+// room's place, or at the side of the conversation as a pane of the room's
+// layout. Either can still go the other way from the page itself.
+export type PagesPref = "full" | "side";
 
 export const SIDEBAR_WIDTH = { min: 208, max: 420, default: 256 } as const;
 
@@ -85,13 +92,14 @@ export interface Prefs extends Aspects {
   appIcon: AppIconPref;
   // The team and the named agents (teamGate.ts); off hides them.
   team: boolean;
-  // The layout (Settings > Appearance > Layout): the sidebar's side and
-  // width in pixels, where the side panel docks, and how tight the window
+  // The layout (Settings > Appearance > Layout): the sidebar's side (or the
+  // top bar) and its width in pixels as a column, where the side panel docks, and how tight the window
   // is spaced.
   sidebarSide: SidebarSide;
   sidebarWidth: number;
   panelDock: PanelDock;
   density: Density;
+  pages: PagesPref;
 }
 
 export const defaultPrefs: Prefs = {
@@ -126,6 +134,7 @@ export const defaultPrefs: Prefs = {
   sidebarWidth: SIDEBAR_WIDTH.default,
   panelDock: "opposite",
   density: "comfortable",
+  pages: "full",
 };
 
 const KEY = "deck.desktop.prefs";
@@ -190,10 +199,11 @@ export function merge(v: Record<string, unknown>): Prefs {
     wallpaper: pick("wallpaper", ["theme", CUSTOM, ...PICTURES.map((x) => x.id)], defaultPrefs.wallpaper),
     appIcon: pick("appIcon", ["theme", ...APP_ICON_IDS], defaultPrefs.appIcon),
     team: bool("team", defaultPrefs.team),
-    sidebarSide: pick("sidebarSide", ["left", "right"] as const, defaultPrefs.sidebarSide),
+    sidebarSide: pick("sidebarSide", SIDEBAR_SIDES, defaultPrefs.sidebarSide),
     sidebarWidth: clampSidebar(size("sidebarWidth", defaultPrefs.sidebarWidth)),
     panelDock: pick("panelDock", ["opposite", "beside", "float"] as const, defaultPrefs.panelDock),
     density: pick("density", ["comfortable", "compact"] as const, defaultPrefs.density),
+    pages: pick("pages", ["full", "side"] as const, defaultPrefs.pages),
   };
 }
 

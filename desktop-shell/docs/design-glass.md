@@ -96,22 +96,24 @@ its parent's radius minus the padding between them.
 ```
 ┌ backdrop ─────────────────────────────────────────────────────────────┐
 │ ┌ sidebar (liquid) ┐ ┌ room (sheet) ──────────────────┐ ┌ panel ─────┐ │
-│ │ ●●●  Deck        │ │ title / project   [⌥ capsules] │ │ (sheet)    │ │
-│ │ Search      ⌘K   │ │ ◉ claude-1 ◉ codex-1  (chips)   │ │ Changes    │ │
-│ │ Inbox        1   │ │ [Conversation | Graph | Changes]│ │ Tasks …    │ │
-│ │ ── threads ──    │ │                                │ │            │ │
-│ │ ▸ Fix lockout ●● │ │   timeline or graph            │ │            │ │
+│ │ ●●●   ▭1 ⌕ ✎ ▯   │ │ title / project   [⌥ capsules] │ │ (sheet)    │ │
+│ │ All projects ▾   │ │ ◉ claude-1 ◉ codex-1  (chips)   │ │ Changes  + │ │
+│ │ deck 3           │ │ [Conversation | Graph | Changes]│ │ Tasks …    │ │
+│ │ ● Docs pass  12h │ │                                │ │            │ │
+│ │ ▢ Fix lockout    │ │   timeline or graph            │ │            │ │
 │ │                  │ │                                │ │            │ │
 │ │                  │ │  ╭ composer (liquid) ────────╮ │ │            │ │
-│ │ ⚙ ▥ ⚇   ● Live  │ │  ╰───────────────────────────╯ │ │            │ │
+│ │ ⚙ ▥ ⚇ ◔ ⊘     ● │ │  ╰───────────────────────────╯ │ │            │ │
 │ └──────────────────┘ └────────────────────────────────┘ └────────────┘ │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 - The shell has an 8px gutter (`p-2 gap-2`) showing the backdrop.
 - **Sidebar**: 256px of `liquid`, `rounded-(--panel-radius)`. On a Mac the
-  traffic lights sit inside it, at (18, 19). Its first row is 36px high, so
-  the lights centre on it. Elsewhere that row is 44px.
+  traffic lights sit inside it, at (18, 19). Its first row is 36px high
+  everywhere, so the lights centre on it; it holds the few glyphs the
+  sidebar keeps at hand (section 13). Or the threads run as a 40px bar
+  across the top (`sidebarSide: "top"`, `ui/ThreadBar.tsx`).
 - **Room**: a `sheet` with `rounded-(--sheet-radius)` and
   `overflow-hidden`. The terminal drawer lives inside it, at the bottom.
 - **Toolbar** (inside the room sheet, 48px, no background): the title over
@@ -130,15 +132,17 @@ its parent's radius minus the padding between them.
   amount plus 1.5rem, and the jump pill sits above it.
 - **Side panel**: a `sheet` beside the room, 480px, rounded. Below 1100px
   it floats over the room as `liquid-thick`.
-- **Pages** (Settings, Usage, Team, Inbox): a sheet in the room's place.
-  Groups inside are `rounded-(--sheet-radius) bg-surface-1` with a rim.
+- **Pages** (Settings, Usage, Team, Inbox): a sheet in the room's place,
+  or panes at the side of the conversation (section 13). Groups inside are
+  `rounded-(--sheet-radius) bg-surface-1` with a rim.
 - **Welcome and Connect**: no sheet. Glass cards float straight on the
   picture, which is the first impression and should feel like it (section
   10, "The first screens").
 
 **Moving things.** Settings > Appearance > Layout (`ui/LayoutPicker.tsx`)
 draws each choice as the window it makes. The sidebar sits on the left or
-the right (`sidebarSide`); the side panel docks on the side opposite it,
+the right, or the threads run in a bar across the top (`sidebarSide`:
+`"left" | "right" | "top"`); the side panel docks on the side opposite it,
 beside it (between it and the room), or floats over the room away from it
 at any width (`panelDock`). The Shell writes `data-sidebar` and
 `data-dock` on `.shell`, and styles.css orders the parts (`order`, then
@@ -152,7 +156,14 @@ tenth; the type keeps its size and the Mac's title row stays 36px. On a
 Mac whichever part sits at the top left clears the traffic lights:
 the sidebar itself, or the room's toolbar or the panel's tabs through the
 Shell's `data-lights`. A right sidebar sees the backdrop mirrored, so the
-band held back for it follows it.
+band held back for it follows it. With the top bar `.shell` is a column
+(the bar, then the room), the panel docks as for a left sidebar (opposite
+on the right, beside on the left), the width row and the grip go away
+(the width waits for the column to come back), the bar clears the traffic
+lights itself (78px at its start), and the picture's clip follows it:
+behind the bar's glass alone, or in smoked glass the whole room under the
+bar (`--topbar-h`). The Pages row (`pages`: `"full" | "side"`) says where
+the sidebar's Settings, Usage, Team and Inbox buttons open them.
 
 ## 5. Components
 
@@ -537,3 +548,44 @@ lip and a shade in the lower (`--glass-inset`).
   back; the send and tinted buttons swell a little under the pointer.
 - In Liquid Glass, menus, popovers, dialogs and toasts bloom open from a
   drop (`liquid-bloom`): squashed, a small overshoot, then still.
+
+## 13. The sidebar, the top bar and pages at the side
+
+After T3 Code's Obsidian theme, the sidebar is calm: the threads and little
+else (`ui/Sidebar.tsx`, the "sidebar" section of styles.css).
+
+- **Header** (36px, the title bar's row): four faint glyphs at its end:
+  the inbox with its count in the warning's colour (no badge), Search, New
+  thread and Hide the sidebar. Nothing else floats there.
+- **Projects**: a quiet heading (`All projects ▾`, the filter, with Add
+  project on hover), then each project's name and count in 11px faint type
+  (no tile; its New thread and Close on hover).
+- **Threads**: plain grey rows of 13px type, about 30px tall (`h-7.5`), 1px
+  apart, groups 8px apart. The open thread is a card of soft grey (8% of
+  the text colour) with a faint rim (`--row-rim`), radius `--row-radius`
+  (12px in smoked glass, 10px elsewhere). A row's state is a dot at its
+  leading edge; its age, faint, at its end.
+- **Foot** (40px, no hairline): Settings, Usage, Team, the bell and Close
+  project as faint glyphs, and the connection as a dot alone.
+- In smoked glass the column is darker than the room, nearly black in the
+  dark mode, and one hairline parts it from the room.
+
+**The top bar** (`ui/ThreadBar.tsx`). The same `nav` ("Threads") as a 40px
+bar across the window: the project switcher, the threads as chips (a
+state's dot, the title, the open one the soft card), a "+" for a new
+thread and a menu of every thread (the archived too), then Search, the
+inbox and the foot's controls, and Hide. The chips scroll sideways (the
+wheel scrolls them too) and fade at an edge with more behind it. With
+Settings open the chips give way to its sections.
+
+**Pages at the side.** Settings, Usage, Team and the inbox are panes the
+room's layout can hold (`page:<name>` in `layout/tree.ts`, `openPage`):
+the first opens in a stack of its own along the room's edge on the panel's
+side, the next joins it as a tab. The pages' tabs, and the side panel's,
+end in a "+" that opens another page; the pages' stack has a button that
+pops the page to full size, and a full page has one in its top right
+corner that puts it at the side. At the side a page keeps its controls but
+leaves its name to its tab, Settings picks its section from a strip of its
+own, and an empty page stands its plate over its words. Full size stays
+the default from the sidebar; Settings > Appearance > Layout > Pages makes
+the sidebar's buttons open them at the side instead (while a room shows).
