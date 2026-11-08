@@ -133,7 +133,8 @@ its parent's radius minus the padding between them.
 - **Pages** (Settings, Usage, Team, Inbox): a sheet in the room's place.
   Groups inside are `rounded-(--sheet-radius) bg-surface-1` with a rim.
 - **Welcome and Connect**: no sheet. Glass cards float straight on the
-  backdrop, which is the first impression and should feel like it.
+  picture, which is the first impression and should feel like it (section
+  10, "The first screens").
 
 **Moving things.** Settings > Appearance > Layout (`ui/LayoutPicker.tsx`)
 draws each choice as the window it makes. The sidebar sits on the left or
@@ -381,10 +382,11 @@ colours.
   riso keeps a 20px press margin and its blocks follow the subject, right
   of the sidebar; the stitch's cards and dice keep off the sidebar's band.
 - **On the first screens.** The Welcome and the connect screen print the
-  picture at the size of their plate (`ui/ArtFigure.tsx`), as a print on
-  the page, with its credit under it. Liquid Glass hangs its true duotone
-  in either mode. The window's backdrop hides there, so type never sits on
-  the picture.
+  backdrop's picture themselves (`ui/ArtFigure.tsx`), full bleed behind
+  their glass, with its credit on a chip in the corner. Liquid Glass hangs
+  its true duotone in either mode. The window's backdrop hides there. The
+  type sits on a scrim, not on the bare picture (section 10, "The first
+  screens").
 - **Never in the room.** The room's sheet, the chat, the composer and the
   diff stay opaque and plain. The pages' small plates (empty Inbox, Team,
   Usage) take each direction's inks (`--plate-lo`, `--plate-hi`).
@@ -454,6 +456,32 @@ glass on a four-column grid, two on a narrow pane:
 A paired Deck keeps no usage record here, and the Usage card says so. The
 question over the composer keeps its words, with the Deck mark before it
 as a wordmark.
+
+**The first screens.** The Welcome ("One deck for all your agents") and
+the connect screen ("What should we work on?") are the home's family, in
+every look (`FirstFrame` in `ui/Welcome.tsx`):
+
+- The theme's picture fills the window, the same on both screens, so Pair
+  on the Welcome changes the cards and not the room.
+- A scrim (`.first-scrim`) pools the canvas behind the column, about 84%
+  at its middle and 22% at the edges, so the picture shows whole round
+  the column. Under the column the dots soften through a 5px blur that
+  fades out by a mask, so a hard dither never fights the type. Bands of
+  the canvas sit under the top strip and the credit.
+- One centred column, 44rem at most: the Deck mark, the question in two
+  tones (its quiet half in the muted colour, with a soft halo of the
+  canvas), a line on what Deck is, and on the Welcome a sample message as
+  a capsule of glass.
+- Under it, two `ActionCard`s side by side (one column below 640px): Open
+  a folder or Add project, and Pair with a Deck. The primary one wears
+  the accent on its rim and in its icon.
+- Then cards of `liquid` glass: the agents Deck found, the pairing form,
+  the recent folders, and any notice or start error.
+- Liquid Glass frosts these cards more here (16px, a 55% tint), as it
+  does the sidebar. The picture's credit is a chip of the canvas in the
+  bottom right.
+- The column scrolls when the window is short. Under 760px tall, the mark
+  and the gaps shrink.
 
 **Light.** The paper is the dots' peak, so bare paper prints clean and the
 limb is a pastel arc of dots on it.

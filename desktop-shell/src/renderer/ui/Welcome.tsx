@@ -91,51 +91,6 @@ export function StartFailed({
   );
 }
 
-// A row of the first screens' action list: the command, a word on where
-// it leads, its keys, parted from the next by a hairline. The one primary
-// row leads with the accent's arrow and reads in the full text colour; the
-// others are quieter until hovered.
-export function Command({
-  label,
-  hint,
-  keys,
-  primary = false,
-  className,
-  ...props
-}: { label: ReactNode; hint?: ReactNode | undefined; keys?: string[] | undefined; primary?: boolean } & ComponentProps<"button">) {
-  return (
-    <button
-      type="button"
-      className={cn(
-        "group/cmd flex h-11 w-full cursor-pointer items-center gap-3 border-hairline border-b text-left outline-none transition-colors first:border-t focus-visible:bg-hover disabled:cursor-default disabled:opacity-50",
-        primary ? "font-medium text-[15px] text-foreground" : "text-[14px] text-muted-foreground hover:text-foreground",
-        className,
-      )}
-      {...props}
-    >
-      <ArrowRight
-        aria-hidden
-        weight={primary ? "bold" : "regular"}
-        className={cn(
-          "size-4 shrink-0 transition-transform duration-150 group-hover/cmd:translate-x-0.5 group-disabled/cmd:translate-x-0",
-          primary ? "text-primary" : "text-faint",
-        )}
-      />
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {hint !== undefined && <span className="hidden truncate font-normal text-faint text-xs lg:inline">{hint}</span>}
-      {keys !== undefined && (
-        <span className={cn("flex shrink-0 gap-1 font-normal text-xs", primary ? "text-muted-foreground" : "text-faint")}>
-          {keys.map((k) => (
-            <kbd key={k} className="min-w-3 text-center font-sans">
-              {k}
-            </kbd>
-          ))}
-        </span>
-      )}
-    </button>
-  );
-}
-
 // An install command in mono, with a button that copies it.
 function Install({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
@@ -202,19 +157,23 @@ function AgentRow({ a, path, looking }: { a: AgentHelp; path: string | null; loo
   );
 }
 
-// How a crew is addressed in Deck: one message that names two agents, in
-// the composer's mono, each mention in its agent's hue.
+// How a crew is addressed in Deck: one message that names two agents, as
+// the composer would hold it, each mention in its agent's hue.
 function Example() {
   return (
-    <p className="font-mono text-xs">
-      <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex</span>{" "}
-      <span className="text-muted-foreground">split the lockout fix</span>
+    <p className="first-example liquid flex max-w-full items-center gap-2 truncate rounded-full px-3.5 py-1.5 font-mono text-xs">
+      <span className="text-faint">›</span>
+      <span>
+        <span style={{ color: kindColour("claude") }}>$claude</span> <span style={{ color: kindColour("codex") }}>$codex</span>{" "}
+        <span className="text-muted-foreground">split the lockout fix</span>
+      </span>
     </p>
   );
 }
 
 // The crew: the agent CLIs on the engine's PATH, found with their path or
-// with how to install them. A table in type, parted by hairlines.
+// with how to install them. A table in type on a card of glass, parted
+// by hairlines.
 function Crew({
   clis,
   checking,
@@ -230,7 +189,7 @@ function Crew({
 }) {
   const found = AGENT_HELP.filter((a) => clis?.clis.some((c) => c.kind === a.kind && c.path !== null) === true).length;
   return (
-    <section aria-label="Your agents" className="flex animate-enter flex-col" style={stagger(2)}>
+    <section aria-label="Your agents" className="first-card liquid flex animate-enter flex-col rounded-(--radius) px-4 pt-2 pb-2.5" style={stagger(2)}>
       <div className="flex h-8 items-center gap-3 border-hairline border-b">
         <h2 className="font-medium text-[13px]">Your agents</h2>
         <span className="text-2xs text-faint tabular-nums">{clis === null ? "" : `${found} of ${AGENT_HELP.length} on your PATH`}</span>
@@ -260,28 +219,6 @@ function Crew({
   );
 }
 
-// The first screens' grid: twelve columns across the window. The headline
-// holds the left; the actions hold the right from the eighth column.
-export const firstGrid = "grid grid-cols-1 gap-x-8 px-6 md:grid-cols-12 md:px-10";
-export const leftCols = "md:col-span-6 lg:col-span-7";
-export const rightCols = "md:col-span-6 md:col-start-7 lg:col-span-5 lg:col-start-8";
-
-// A headline in two tones: what it is, in the full text colour, then,
-// muted, what it is for. `.headline` and `.headline-quiet` let a theme
-// restyle the pair.
-export function Headline({ loud, quiet, className, inline = false }: { loud: string; quiet: string; className?: string; inline?: boolean }) {
-  return (
-    <h1
-      className={cn(
-        "headline text-balance font-medium text-[clamp(2.5rem,5vw,4.5rem)] leading-[0.98] tracking-[-0.045em] [font-family:var(--font-display,inherit)]",
-        className,
-      )}
-    >
-      {loud} <span className={cn("headline-quiet text-muted-foreground", !inline && "block")}>{quiet}</span>
-    </h1>
-  );
-}
-
 // The window's top strip on the first screens: Deck's mark and name where
 // a title bar would put them (after the traffic lights on a Mac), and the
 // way back to the open projects.
@@ -303,13 +240,10 @@ export function FirstStrip({ onBack, className }: { onBack?: (() => void) | unde
   );
 }
 
-// The first screen of a new install, and the palette's "Welcome". A wide
-// dithered picture fills the top of the window; under it, the headline
-// holds the lower left and the ways in the right; the crew Deck can drive
-// runs across the foot as a table. No sheet and no cards.
 // One of the first screens' actions as a card of glass (design-glass.md,
-// section 12): an icon, what it does, a line on when, and its keys. The
-// primary one wears the accent on its rim.
+// "The first screens"): an icon, what it does, a line on when, and on the
+// right its keys over the arrow. The primary one wears the accent on its
+// rim and in its icon.
 export function ActionCard({
   icon,
   label,
@@ -323,57 +257,87 @@ export function ActionCard({
     <button
       type="button"
       className={cn(
-        "first-action liquid group/act relative flex min-h-[6.5rem] w-full cursor-pointer flex-col items-start gap-1.5 rounded-(--radius) p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50",
+        "first-action liquid group/act relative flex w-full cursor-pointer items-start gap-3 rounded-(--radius) p-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50",
         primary && "first-primary",
         className,
       )}
       {...props}
     >
-      <span className="flex w-full items-center gap-2">
-        <span aria-hidden className={cn("grid size-7 shrink-0 place-items-center rounded-full [&>svg]:size-4", primary ? "bg-primary/15 text-primary" : "bg-hover text-muted-foreground")}>
-          {icon}
-        </span>
-        <span className="min-w-0 flex-1 truncate font-medium text-[14px] text-foreground">{label}</span>
-        {keys !== undefined && (
-          <span className="flex shrink-0 gap-1 font-normal text-faint text-xs">
+      <span
+        aria-hidden
+        className={cn(
+          "grid size-8 shrink-0 place-items-center rounded-full [&>svg]:size-4",
+          primary ? "bg-primary/15 text-primary" : "bg-hover text-muted-foreground",
+        )}
+      >
+        {icon}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5 pt-1">
+        <span className="truncate font-medium text-[14px] text-foreground">{label}</span>
+        {hint !== undefined && <span className="text-pretty text-muted-foreground text-xs leading-relaxed">{hint}</span>}
+      </span>
+      <span className="flex shrink-0 flex-col items-end justify-between gap-2 self-stretch pt-1.5">
+        {keys !== undefined ? (
+          <span className="flex gap-1 font-normal text-faint text-xs">
             {keys.map((k) => (
               <kbd key={k} className="min-w-3 text-center font-sans">
                 {k}
               </kbd>
             ))}
           </span>
+        ) : (
+          <span />
         )}
+        <ArrowRight
+          aria-hidden
+          className="size-4 text-faint transition-[translate,color] duration-150 group-hover/act:translate-x-0.5 group-hover/act:text-foreground group-disabled/act:translate-x-0"
+        />
       </span>
-      {hint !== undefined && <span className="text-pretty pl-9 text-muted-foreground text-xs leading-relaxed">{hint}</span>}
-      <ArrowRight aria-hidden className="mt-auto ml-auto size-4 text-faint transition-transform duration-150 group-hover/act:translate-x-0.5 group-disabled/act:translate-x-0" />
     </button>
   );
 }
 
-// The first screens' frame: the picture full bleed behind everything (the
-// theme's, or another), the strip along the top, and a column of glass in
-// the middle that scrolls when the window is short.
-export function FirstFrame({
-  name,
-  picture,
-  onBack,
-  children,
-}: {
-  name: "welcome" | "connect";
-  picture?: string;
-  onBack?: (() => void) | undefined;
-  children: ReactNode;
-}) {
+// The first screens' frame (design-glass.md, "The first screens"): the
+// theme's picture full bleed behind everything, a scrim that pools the
+// canvas behind the column so the type reads and leaves the picture whole
+// at the edges, the strip along the top, and one centred column that
+// scrolls when the window is short.
+export function FirstFrame({ name, onBack, children }: { name: "welcome" | "connect"; onBack?: (() => void) | undefined; children: ReactNode }) {
   return (
-    <main className={cn("first-screen relative isolate flex h-full flex-col overflow-hidden", name === "welcome" ? "welcome-screen" : "connect")} data-screen={name}>
-      <ArtFigure {...(picture === undefined ? {} : { picture })} className="first-art absolute inset-0 -z-10" plateClassName="" creditClassName="first-credit absolute right-4 bottom-2 z-10" />
-      <div aria-hidden className="first-scrim pointer-events-none absolute inset-0 -z-10" />
+    <main
+      className={cn("first-screen relative isolate flex h-full flex-col overflow-hidden", name === "welcome" ? "welcome-screen" : "connect")}
+      data-screen={name}
+    >
+      <ArtFigure className="first-art absolute inset-0 -z-10" creditClassName="first-credit absolute right-3 bottom-3">
+        <div aria-hidden className="first-scrim pointer-events-none absolute inset-0" />
+      </ArtFigure>
       <FirstStrip onBack={onBack} className="relative" />
       <div className="relative flex min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto my-auto flex w-full max-w-[46rem] flex-col gap-5 px-6 pt-6 pb-12">{children}</div>
+        <div className="mx-auto my-auto flex w-full max-w-[44rem] flex-col gap-4 px-6 pt-4 pb-14 [@media(max-height:760px)]:pb-10">{children}</div>
       </div>
     </main>
   );
+}
+
+// The head of a first screen, centred: Deck's mark, the question in two
+// tones (the claim, then quieter, the rest of the line), a line on what
+// it is, and what goes under it.
+export function FirstHero({ loud, quiet, lede, children }: { loud: string; quiet: string; lede: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="first-hero flex animate-enter flex-col items-center gap-3 pb-3 text-center [@media(max-height:760px)]:gap-2.5 [@media(max-height:760px)]:pb-1">
+      <DeckMark className="h-7 w-auto [@media(max-height:760px)]:h-5" />
+      <h1 className="headline text-balance font-medium text-[clamp(1.875rem,3.4vw,2.5rem)] leading-[1.08] tracking-[-0.035em] [font-family:var(--font-display,inherit)]">
+        {loud} <span className="headline-quiet">{quiet}</span>
+      </h1>
+      <p className="max-w-[34rem] text-pretty text-[14px] text-muted-foreground leading-relaxed">{lede}</p>
+      {children}
+    </div>
+  );
+}
+
+// What went wrong, on a card of glass so it reads over the picture.
+export function FirstNotes({ children }: { children: ReactNode }) {
+  return <div className="first-card liquid flex animate-enter flex-col gap-3 rounded-(--radius) p-4">{children}</div>;
 }
 
 export function Welcome({
@@ -419,23 +383,26 @@ export function Welcome({
   };
   return (
     <FirstFrame name="welcome" onBack={onBack}>
-      <div className="flex animate-enter flex-col gap-3">
-        <DeckMark className="h-6 w-auto self-start" />
-        <Headline inline loud="One deck" quiet="for all your agents" className="text-[clamp(1.9rem,3.6vw,2.6rem)] leading-[1.05] tracking-[-0.035em]" />
-        <p className="max-w-[36rem] text-pretty text-[14px] text-muted-foreground leading-relaxed">
-          Claude Code, Codex, OpenCode, Antigravity and Pi in one thread. Hand a task to one, split it between two, or race three on the same bug.
-        </p>
+      <FirstHero
+        loud="One deck"
+        quiet="for all your agents"
+        lede="Claude Code, Codex, OpenCode, Antigravity and Pi in one thread. Hand a task to one, split it between two, or race three on the same bug."
+      >
         <Example />
-      </div>
-      {!engine && (
-        <Notice tone="warning">
-          Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
-          <code className="font-mono text-foreground/80">DECK_BIN</code>.
-        </Notice>
+      </FirstHero>
+      {(!engine || error !== null || (failure !== null && !failure.noAgents)) && (
+        <FirstNotes>
+          {!engine && (
+            <Notice tone="warning">
+              Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
+              <code className="font-mono text-foreground/80">DECK_BIN</code>.
+            </Notice>
+          )}
+          {error !== null && <Notice tone="error">{error}</Notice>}
+          {failure !== null && !failure.noAgents && <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />}
+        </FirstNotes>
       )}
-      {error !== null && <Notice tone="error">{error}</Notice>}
-      {failure !== null && !failure.noAgents && <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />}
-      <div className="grid animate-enter gap-2 sm:grid-cols-2" style={stagger(1)}>
+      <div className="grid animate-enter gap-3 sm:grid-cols-2" style={stagger(1)}>
         <ActionCard
           primary
           className="primary"
@@ -451,9 +418,7 @@ export function Welcome({
         />
         <ActionCard icon={<Laptop />} label="Pair with a Deck…" hint="One you run in a terminal, or on another computer." onClick={onPair} />
       </div>
-      <div className="first-card liquid animate-enter rounded-(--radius) px-4 pt-2 pb-3" style={stagger(2)}>
-        <Crew clis={clis} checking={checking} failure={failure} onCheck={() => void check(true)} onRetry={retry} />
-      </div>
+      <Crew clis={clis} checking={checking} failure={failure} onCheck={() => void check(true)} onRetry={retry} />
     </FirstFrame>
   );
 }

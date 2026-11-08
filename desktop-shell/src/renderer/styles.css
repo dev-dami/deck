@@ -784,7 +784,7 @@ body {
    gives way to a plain fill under it. The art shows behind the glass
    chrome and in the gutters between the panels; the room's sheet stays
    opaque over it. The first screens (Welcome, Connect) print the picture
-   as a print on the page instead (ui/ArtFigure.tsx), on a plain ground. */
+   themselves (ui/ArtFigure.tsx), full bleed behind their glass. */
 :root[data-backdrop] body,
 :root[data-backdrop][data-vibrancy] body {
   background: var(--backdrop);
@@ -3128,20 +3128,73 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* ---- The first screens (ui/Welcome.tsx FirstFrame, design-glass.md
-   section 12) -----------------------------------------------------------
-   The picture full bleed, a soft pool of the canvas behind the column so
-   the type reads, and the actions and the agents as cards of glass. */
+   "The first screens") ---------------------------------------------------
+   The picture full bleed. The scrim pools the canvas behind the column,
+   deepest where the type is, and lets go towards the edges so the picture
+   shows whole there; a band at the top under the strip and one at the
+   foot under the credit. The actions, the agents, the pairing form and
+   the recent folders are cards of glass over it. */
 .first-scrim {
+  --pool: ellipse min(50rem, 72vw) min(42rem, 76vh) at 50% 50%;
   background:
-    radial-gradient(64% 70% at 50% 50%, color-mix(in srgb, var(--canvas) 66%, transparent), color-mix(in srgb, var(--canvas) 22%, transparent) 78%),
-    linear-gradient(180deg, color-mix(in srgb, var(--canvas) 60%, transparent), transparent 14%);
+    radial-gradient(
+      var(--pool),
+      color-mix(in srgb, var(--canvas) 84%, transparent),
+      color-mix(in srgb, var(--canvas) 72%, transparent) 50%,
+      color-mix(in srgb, var(--canvas) 22%, transparent) 100%
+    ),
+    linear-gradient(180deg, color-mix(in srgb, var(--canvas) 72%, transparent), transparent 5rem),
+    linear-gradient(0deg, color-mix(in srgb, var(--canvas) 40%, transparent), transparent 5rem);
 }
+/* Under the column the dots soften, as through smoked glass, so a hard
+   dither never fights the type; towards the edges they come back crisp. */
+.first-scrim::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  -webkit-mask-image: radial-gradient(var(--pool), #000 35%, transparent 85%);
+  mask-image: radial-gradient(var(--pool), #000 35%, transparent 85%);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .first-scrim::before {
+    display: none;
+  }
+}
+/* The words over the picture keep a soft halo of the canvas, so a bright
+   patch never runs into a letter; the quiet half of the question reads in
+   the muted colour, not the faint one. */
+.first-hero {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--canvas) 80%, transparent);
+}
+.first-hero .headline-quiet {
+  color: var(--text-muted);
+}
+/* The picture's credit, small in the corner, on a chip of the canvas so it
+   reads on any part of any picture. */
 .first-credit {
-  color: var(--text-faint);
-  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+  max-width: min(36rem, calc(100% - 1.5rem));
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--canvas) 64%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
-:root[data-mode="light"] .first-credit {
-  text-shadow: 0 1px 2px rgb(255 255 255 / 0.7);
+.first-credit:empty {
+  display: none;
+}
+/* Liquid glass is clear by design; over a whole picture, under rows of
+   text, it frosts more, as the sidebar's does. */
+@media (prefers-reduced-transparency: no-preference) {
+  :root[data-material="glass"] .first-screen .liquid {
+    --glass-blur: 16px;
+    --glass-fill: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  }
+  :root[data-material="glass"][data-mode="light"] .first-screen .liquid {
+    --glass-fill: color-mix(in srgb, #fff 62%, transparent);
+  }
 }
 .first-primary {
   --glass-rim: color-mix(in srgb, var(--primary) 50%, transparent);

@@ -1,23 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { type PrintSize, usePrint } from "../backdrop/usePrint";
 import { cn } from "../lib/cn";
 
-// A first screen's picture (the Welcome, the connect screen): the theme's
-// art direction printed at the size of its box, as a print on the page,
-// with its credit under it in faint type. "theme" prints the backdrop's
-// picture (the theme's own, or the person's); an id prints that one.
-// Decorative: the credit is the only text.
-export function ArtFigure({
-  picture = "theme",
-  className,
-  plateClassName,
-  creditClassName,
-}: {
-  picture?: string;
-  className?: string;
-  plateClassName?: string;
-  creditClassName?: string;
-}) {
+// The first screens' picture (the Welcome, the connect screen): the
+// backdrop's picture (the theme's own, or the person's) printed through
+// the theme's process at the size of its box, with its credit. The
+// screens set it full bleed behind everything (Welcome.tsx FirstFrame).
+// Decorative: the credit is the only text. Children lie over the picture
+// and under the credit (the first screens' scrim).
+export function ArtFigure({ className, creditClassName, children }: { className?: string; creditClassName?: string; children?: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState<PrintSize | null>(null);
@@ -44,17 +35,12 @@ export function ArtFigure({
     };
   }, []);
 
-  const printed = usePrint(canvas, size, picture, "print");
+  const printed = usePrint(canvas, size, "theme", "print");
   const line = printed?.credit === null || printed === null ? null : [printed.credit, printed.source].filter(Boolean).join(". ");
 
   return (
-    <figure className={cn("flex flex-col gap-1.5", className)}>
-      <div
-        ref={box}
-        aria-hidden
-        className={cn("art-print relative min-h-0 flex-1 overflow-hidden", plateClassName)}
-        data-print={printed?.process}
-      >
+    <figure className={cn("flex flex-col", className)}>
+      <div ref={box} aria-hidden className="art-print relative min-h-0 flex-1 overflow-hidden" data-print={printed?.process}>
         <canvas
           ref={canvas}
           className={cn(
@@ -63,7 +49,8 @@ export function ArtFigure({
           )}
         />
       </div>
-      <figcaption className={cn("min-h-[1lh] text-pretty text-3xs text-faint/80 tracking-wide", creditClassName)}>{line}</figcaption>
+      {children}
+      <figcaption className={cn("text-pretty text-3xs tracking-wide", creditClassName)}>{line}</figcaption>
     </figure>
   );
 }
