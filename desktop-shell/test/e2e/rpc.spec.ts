@@ -975,7 +975,7 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   // A spawned agent's lane says who spawned it, by the name people say.
   await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-parent')).toHaveText("by @Claude");
   await expect(lanes.locator('[data-lane="agent:codex-1"] .lane-parent')).toHaveCount(0);
-  await expect(page.locator(".room-index")).toContainText("ain");
+  await expect(page.locator(".room-index > span").last()).toHaveText("main");
 
   // A click on codex-1 shows its lane alone and opens its popover.
   await lanes.locator('[data-lane="agent:codex-1"]').click();
