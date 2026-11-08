@@ -23,6 +23,7 @@ const deps = (team: (() => void) | null): CommandDeps => ({
   addProject: noop,
   switchDeck: noop,
   welcome: noop,
+  tour: noop,
 });
 
 describe("the Team switch", () => {

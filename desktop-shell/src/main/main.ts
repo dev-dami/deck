@@ -426,6 +426,7 @@ async function main(): Promise<void> {
       electron: process.versions.electron,
       chromium: process.versions.chrome,
       platform: `${process.platform} ${process.arch}`,
+      automated: process.argv.some((a) => a.startsWith("--remote-debugging-port")),
     },
     log: writeLog,
     openLogs,

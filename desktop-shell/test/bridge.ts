@@ -56,7 +56,7 @@ export function testHost(
     deckPath: FAKE_DECK,
     deviceName: "Deck desktop (test)",
     pickFolder,
-    appInfo: { version: "0.1.0", electron: "test", chromium: "test", platform: process.platform },
+    appInfo: { version: "0.1.0", electron: "test", chromium: "test", platform: process.platform, automated: true },
     log: (level, message) => logged.push([level, message]),
     openLogs: async () => {},
     installUpdate: () => {},

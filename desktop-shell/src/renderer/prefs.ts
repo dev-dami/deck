@@ -35,6 +35,8 @@ export type DiffLayout = "unified" | "split";
 export type SidebarSide = "left" | "right";
 export type PanelDock = "opposite" | "beside" | "float";
 export type Density = "comfortable" | "compact";
+// The starter tour (tour.ts): "new" until it is finished or skipped.
+export type TourPref = "new" | "done";
 
 export const SIDEBAR_WIDTH = { min: 208, max: 420, default: 256 } as const;
 
@@ -92,6 +94,8 @@ export interface Prefs extends Aspects {
   sidebarWidth: number;
   panelDock: PanelDock;
   density: Density;
+  // Whether the starter tour still starts by itself on a first run.
+  tour: TourPref;
 }
 
 export const defaultPrefs: Prefs = {
@@ -126,6 +130,7 @@ export const defaultPrefs: Prefs = {
   sidebarWidth: SIDEBAR_WIDTH.default,
   panelDock: "opposite",
   density: "comfortable",
+  tour: "new",
 };
 
 const KEY = "deck.desktop.prefs";
@@ -194,6 +199,9 @@ export function merge(v: Record<string, unknown>): Prefs {
     sidebarWidth: clampSidebar(size("sidebarWidth", defaultPrefs.sidebarWidth)),
     panelDock: pick("panelDock", ["opposite", "beside", "float"] as const, defaultPrefs.panelDock),
     density: pick("density", ["comfortable", "compact"] as const, defaultPrefs.density),
+    // Prefs saved before the tour existed belong to someone who knows the
+    // window already: the tour waits for the palette or Settings.
+    tour: pick("tour", ["new", "done"] as const, "done"),
   };
 }
 

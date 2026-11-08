@@ -509,3 +509,45 @@ lip and a shade in the lower (`--glass-inset`).
   back; the send and tinted buttons swell a little under the pointer.
 - In Liquid Glass, menus, popovers, dialogs and toasts bloom open from a
   drop (`liquid-bloom`): squashed, a small overshoot, then still.
+
+## 13. The starter tour
+
+A skippable walk through the window for a new person (`ui/Tour.tsx`, the
+steps and their logic in `tour.ts`), as coach marks in the window's own
+material.
+
+**Steps.** The Welcome has four: what Deck is, Open a folder, Pair with a
+Deck, and the agent CLIs. A project's window has nine: a look around, the
+threads (`nav[aria-label="Threads"]`), the composer and its `$agent`, `@`
+and `#` mentions, the mode dial (Plan / Ask / Yolo), the home cards
+(`section.home`), Conversation / Graph (`.room-views`), the diff and panels
+(`.panel-toggles`), the palette (⌘/Ctrl+K) and Settings › Appearance.
+Each finds its target by selector when it shows; a step whose target is
+not on screen is passed over (the home cards in an open thread, the views
+on a new one). The mode dial lives only in a thread, so its step shows in
+the middle without it.
+
+**Look.** A dim veil with a hole cut round the target (one element whose
+spread shadow is the veil), the hole's edge a ring of the accent that
+breathes, and a card of `liquid-thick` glass on `--radius`: the count,
+the title, a line or two, the dots (the current one a capsule of the
+accent), Skip, Back and Next. The card sits below the target, else above,
+else beside it, else in the middle, never past the window's edges, and
+follows the target as the window resizes. A step with no target shrinks
+the hole to a point under the card. Hole and card glide between steps on
+`--ease`; reduced motion holds them still.
+
+**Input.** The veil takes no pointer, only the card does: the window stays
+usable, and Open a folder mid-tour opens the folder (the tour then goes on
+with the project's steps). ← and → step, Esc leaves, Next holds the focus;
+while the person types in a field the keys are theirs.
+
+**When.** The pref `tour` is `"new"` in a new window and `"done"` once the
+tour is finished or skipped (prefs saved before it existed load as done).
+It starts by itself only on a real first run: never when
+`navigator.webdriver` is set or the app was launched with a remote
+debugging port (`AppInfo.automated`), so the end-to-end tests click through
+an untouched window. The Welcome's part ends in Got it and hands over to the
+project's when a project opens. The palette's Show the tour and Settings ›
+General › Getting started start it again; starting it closes the page in
+the room's place.
