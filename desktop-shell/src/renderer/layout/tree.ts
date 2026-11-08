@@ -1,4 +1,4 @@
-import { PANELS, type Panel } from "../ui";
+import { type Page, PAGES, PANELS, type Panel } from "../ui";
 
 // The room's layout as a tree, tmux-like: splits of rows and columns whose
 // leaves are stacks, each a set of panes shown as tabs. A pane is the
@@ -45,9 +45,30 @@ export type Zone = Edge | "center";
 const PANEL_IDS: readonly string[] = PANELS.map((p) => p.panel);
 const TERM = /^term:[a-z0-9]{1,24}$/;
 
+// A page (Settings, Usage, Team, the inbox) opened at the side: a pane the
+// tree holds only while it is open.
+const PAGE_IDS: readonly string[] = PAGES.map((p) => `page:${p.page}`);
+export const pageId = (p: Page): PaneId => `page:${p}`;
+export const isPage = (p: PaneId): boolean => PAGE_IDS.includes(p);
+export const pageOf = (p: PaneId): Page | null => (isPage(p) ? (p.slice(5) as Page) : null);
+
 export const isTerminal = (p: PaneId): boolean => TERM.test(p);
 export const isPanel = (p: PaneId): p is Panel => PANEL_IDS.includes(p);
-export const knownPane = (p: unknown): p is PaneId => typeof p === "string" && (p === CONVERSATION || isPanel(p) || isTerminal(p));
+export const knownPane = (p: unknown): p is PaneId => typeof p === "string" && (p === CONVERSATION || isPanel(p) || isTerminal(p) || isPage(p));
+
+// Opens a page at the side: as a tab of the stack that holds the pages,
+// else in a stack of its own along the room's edge on the given side.
+export function openPage(l: Layout, page: Page, side: "left" | "right"): Layout {
+  const id = pageId(page);
+  let next = l;
+  if (!contains(l.root, id)) {
+    const home = stacksOf(l.root).find((s) => s.panes.length > 0 && s.panes.every(isPage));
+    next = home === undefined ? dockRoot(l, id, side) : dock(l, id, home.id, "center");
+  }
+  next = setHidden(next, id, false);
+  if (next.zoom !== null && next.zoom !== id) next = { ...next, zoom: null };
+  return activate(next, id);
+}
 
 let seq = 0;
 // A node's id: unique in the window, which is all a key or a drop target needs.
