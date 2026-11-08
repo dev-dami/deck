@@ -85,10 +85,12 @@ jobs:
   # The desktop app (desktop-shell). It imports the phone client's sources
   # and loads proto/deck/v1/deck.proto, so changes there can break it too.
   # Playwright runs the renderer in Chromium and the whole app in Electron,
-  # under xvfb.
+  # under xvfb. The runner is pinned to Ubuntu 24.04: ubuntu-latest moved to
+  # 26.04, which Playwright 1.56 cannot install Chromium or its system
+  # libraries for ("Playwright does not support chromium on ubuntu26.04-x64").
   desktop:
-    name: desktop (ubuntu-latest)
-    runs-on: ubuntu-latest
+    name: desktop (ubuntu-24.04)
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: desktop-shell

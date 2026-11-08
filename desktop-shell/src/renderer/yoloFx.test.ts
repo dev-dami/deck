@@ -143,4 +143,11 @@ test("only a switch of the open room to yolo plays", () => {
   expect(playsOn(at("a", "yolo"), at("a", "yolo"))).toBe(false);
   expect(playsOn(at("a", "yolo"), at("a", "ask"))).toBe(false);
   expect(playsOn(at("", "ask"), at("", "yolo"))).toBe(false);
+  // A new thread starts in yolo (pkg/rpc StartMode): from the new-thread
+  // screen into its room, loading or not, is no switch.
+  expect(playsOn(at("", null), at("new", "yolo"))).toBe(false);
+  expect(playsOn(at("", null), at("new", null))).toBe(false);
+  expect(playsOn(at("new", null), at("new", "yolo"))).toBe(false);
+  // Out of yolo and back again is.
+  expect(playsOn(at("new", "ask"), at("new", "yolo"))).toBe(true);
 });

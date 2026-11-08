@@ -437,6 +437,8 @@ function Diffs({ p }: { p: Prefs }) {
 function Agents({ state, p }: { state: AppState; p: Prefs }) {
   const kinds = state.server?.kinds ?? [];
   const yolo = state.server?.allow_yolo === true;
+  // A Deck on this computer (no protocol v2) starts new threads in Yolo.
+  const yoloDefault = yolo && state.server?.protocol === 0;
   // A Deck that keeps profiles reads "@" as an agent's sigil, as it reads
   // "$"; an older one reads only "$".
   const deck = useContext(ProfilesDeck);
@@ -519,9 +521,13 @@ function Agents({ state, p }: { state: AppState; p: Prefs }) {
         <Row
           title="Yolo mode"
           description={
-            yolo ? "A thread may run every command and edit without asking." : "Not allowed for this window: the paired Deck has to allow it."
+            yoloDefault
+              ? "New threads start in Yolo and run every command and edit without asking. Plan and Ask are in the mode menu."
+              : yolo
+                ? "A thread may run every command and edit without asking."
+                : "Not allowed for this window: the paired Deck has to allow it."
           }
-          control={<Value tone={yolo ? "on" : "off"}>{yolo ? "Allowed" : "Not allowed"}</Value>}
+          control={<Value tone={yolo ? "on" : "off"}>{yoloDefault ? "Default" : yolo ? "Allowed" : "Not allowed"}</Value>}
         />
         <Row title="Models" description="Each agent's model and effort are picked per thread, from the composer's agent picker." />
       </Section>

@@ -385,7 +385,11 @@ The Deck desktop app does not use the WebSocket above. It runs
     of a file on this machine, at most 50 MB, checked by its bytes; `label`
     and `frames` are as in `chat.send`.
   - Text is not capped.
-  - Yolo is allowed, because the caller is the user at this machine.
+  - Yolo is allowed, because the caller is the user at this machine, and a
+    session `CreateSession` makes starts in yolo (`pkg/rpc` `StartMode`);
+    a sub-thread takes its parent's mode. Sessions made otherwise, a
+    phone's among them, start in the engine's default, and a phone still
+    needs its R15 grant to switch to yolo.
   - Errors carry their message.
   - Rooms. `Session` carries `attention`, `branch` and `archived`,
     `Notice.via` marks overlap notes, and `lease_changed` reports a lease

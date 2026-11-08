@@ -195,6 +195,33 @@ func (b *Backend) CreateSession(ctx context.Context, title string) (wire.Session
 	return b.wireSession(s), nil
 }
 
+// CreateSessionIn implements [remote.ModeStarter]: a session whose thread
+// starts in mode, the workspace's own ([workspace.ModeStarter]) when it has
+// one, so the session says that mode from its first event; else made and
+// then switched.
+func (b *Backend) CreateSessionIn(ctx context.Context, title, mode string) (wire.Session, error) {
+	ms, ok := b.core.(workspace.ModeStarter)
+	if !ok {
+		s, err := b.CreateSession(ctx, title)
+		if err != nil {
+			return s, err
+		}
+		if err := b.SetMode(s.ID, mode); err != nil {
+			return wire.Session{}, err
+		}
+		s.Mode = mode
+		return s, nil
+	}
+	if strings.TrimSpace(title) == "" {
+		title = "New Session"
+	}
+	s, err := ms.CreateSessionIn(ctx, title, mode)
+	if err != nil {
+		return wire.Session{}, err
+	}
+	return b.wireSession(s), nil
+}
+
 func (b *Backend) RenameSession(ctx context.Context, id, title string) error {
 	s, err := b.check(ctx, id)
 	if err != nil {

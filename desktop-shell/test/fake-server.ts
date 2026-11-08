@@ -84,6 +84,9 @@ export interface NativeSub {
 
 export interface FakeOptions {
   allowYolo?: boolean;
+  // The mode sessions.create starts a thread in: "ask" for a paired Deck,
+  // "yolo" for the desktop's own (pkg/rpc StartMode, FakeRpcDeck).
+  startMode?: "plan" | "ask" | "yolo";
   // Milliseconds between streamed updates.
   tickMs?: number;
   // Adds the thread "Big room" with this many messages.
@@ -599,7 +602,7 @@ export class FakeDeck {
       case "sessions.list":
         return [...this.threads.values()].map((t) => this.withPending(t.session));
       case "sessions.create": {
-        const t = this.addThread(this.id("ses"), typeof p["title"] === "string" ? p["title"] : "");
+        const t = this.addThread(this.id("ses"), typeof p["title"] === "string" ? p["title"] : "", this.opts.startMode);
         this.broadcast("session.created", t.session);
         return t.session;
       }
@@ -1101,9 +1104,9 @@ export class FakeDeck {
     return `${prefix}_${this.next++}`;
   }
 
-  private addThread(id: string, title: string): Thread {
+  private addThread(id: string, title: string, mode: "plan" | "ask" | "yolo" = "ask"): Thread {
     const t: Thread = {
-      session: { id, title, updated_at: this.now(), busy: false, pending: 0, mode: "ask" },
+      session: { id, title, updated_at: this.now(), busy: false, pending: 0, mode },
       messages: [],
       roster: [],
       queue: [],

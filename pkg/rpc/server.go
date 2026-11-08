@@ -250,7 +250,7 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 		}
 		return nil, fail(errors.New("the sub-thread's session is gone"))
 	}
-	v, err := s.be.CreateSession(ctx, t)
+	v, err := s.create(ctx, t)
 	if err != nil {
 		return nil, fail(err)
 	}
@@ -270,6 +270,31 @@ func (s *Server) CreateSession(ctx context.Context, r *deckv1.CreateSessionReque
 	p := toSession(v)
 	s.note(p, nil)
 	return p, nil
+}
+
+// StartMode is the mode the sessions the desktop app makes start in: the
+// caller is the person at this machine, so its agents run everything without
+// asking, and Plan and Ask are a SetMode away. Sub-threads take their
+// parent's mode. A phone's sessions are not made here and keep the engine's
+// default (docs/remote-contract.md R15).
+const StartMode = wire.ModeYolo
+
+// create makes a session in StartMode: with the backend's ModeStarter when
+// it has one, so the session's first event already says StartMode.
+func (s *Server) create(ctx context.Context, title string) (wire.Session, error) {
+	if ms, ok := s.be.(remote.ModeStarter); ok {
+		return ms.CreateSessionIn(ctx, title, StartMode)
+	}
+	v, err := s.be.CreateSession(ctx, title)
+	if err != nil {
+		return v, err
+	}
+	if err := s.be.SetMode(v.ID, StartMode); err != nil {
+		_ = s.be.DeleteSession(ctx, v.ID)
+		return wire.Session{}, err
+	}
+	v.Mode = StartMode
+	return v, nil
 }
 
 func (s *Server) RenameSession(ctx context.Context, r *deckv1.RenameSessionRequest) (*deckv1.Empty, error) {

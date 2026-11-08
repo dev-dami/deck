@@ -9,7 +9,8 @@ import { MenuLabel, Popover } from "./kit/menu";
 const ICONS = { plan: ListChecks, ask: MessageCircleQuestion, yolo: Flame } as const;
 
 // Plan, Ask or Yolo for the open session, as a menu of the same rows and
-// keys as the agent picker (AgentPicker.tsx). Yolo asks first.
+// keys as the agent picker (AgentPicker.tsx). Yolo asks first when the
+// person keeps "Confirm Yolo mode" on.
 export function ModePicker({
   mode,
   allowYolo,

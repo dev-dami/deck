@@ -10,14 +10,19 @@ import { attachBridge } from "./harness";
 let fake: FakeRpcDeck;
 let host: TestHost;
 let dir: string;
+// The confirmations shown: Yolo asks first only when the person turned that on.
+let dialogs: string[];
 
 test.beforeEach(async ({ page }) => {
   fake = await FakeRpcDeck.start({ tickMs: 250 });
   dir = mkdtempSync(join(tmpdir(), "deck-folder-"));
   process.env["DECK_FAKE_HANDSHAKE"] = fake.handshake;
   host = await attachBridge(page, async () => dir);
-  // Yolo asks first; the tests say yes.
-  page.on("dialog", (d) => void d.accept());
+  dialogs = [];
+  page.on("dialog", (d) => {
+    dialogs.push(d.message());
+    void d.accept();
+  });
 });
 
 test.afterEach(async () => {
@@ -141,4 +146,38 @@ test("opening a room already in yolo does not play, nor does a room in the backg
   await expect(page.locator(".mode-picker")).toHaveAttribute("data-mode", "yolo");
   await page.waitForTimeout(1600);
   expect((await fxTimes(page)).seen).toBeNull();
+});
+
+test("a new thread starts in Yolo without the effect; a switch back into Yolo plays it and asks nothing", async ({ page }) => {
+  await openFolder(page);
+  await watchFx(page);
+  await page.getByRole("button", { name: "New thread" }).first().click();
+  await composer(page).fill("tidy the limiter");
+  await composer(page).press("Enter");
+  await expect.poll(() => fake.deck.sent.at(-1)?.text).toBe("tidy the limiter");
+  const picker = page.locator(".mode-picker");
+  await expect(picker).toHaveAttribute("data-mode", "yolo");
+  await expect(picker).toContainText("Yolo");
+  await page.waitForTimeout(1600);
+  expect((await fxTimes(page)).seen).toBeNull();
+
+  // Plan and Ask are still there, and going back to Yolo is a switch.
+  await picker.click();
+  await page.getByRole("menuitemradio", { name: /Ask/ }).click();
+  await expect(picker).toHaveAttribute("data-mode", "ask");
+  await picker.click();
+  await page.getByRole("menuitemradio", { name: /Yolo/ }).click();
+  await expect(fx(page)).toHaveCount(1);
+  await expect(picker).toHaveAttribute("data-mode", "yolo");
+  expect(dialogs).toEqual([]);
+});
+
+test("with Confirm Yolo mode on, Yolo asks first", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("deck.desktop.prefs", JSON.stringify({ confirmYolo: true })));
+  await openMain(page);
+  await composer(page).click();
+  await composer(page).press("Control+Shift+Y");
+  await expect(page.locator(".mode-picker")).toHaveAttribute("data-mode", "yolo");
+  expect(dialogs).toHaveLength(1);
+  expect(dialogs[0]).toContain("Switch to Yolo?");
 });
