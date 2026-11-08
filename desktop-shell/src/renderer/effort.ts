@@ -1,10 +1,11 @@
-// A model's reasoning effort as a glyph (ui/EffortGlyph.tsx, after T3 Code's
-// effort bars): rising bars, one for each level the model takes, filled up
-// to the one it runs at. The words stay in the pickers' rows, the tooltip
-// and for assistive tech.
+// A model's reasoning effort as a dial (ui/EffortDial.tsx; design-glass.md,
+// section 12): a ring of segments, one for each level the model takes, lit
+// up to the one it runs at, round a cap whose pointer turns to that level.
+// Turning it spins the cap. The words stay in the pickers' rows, the
+// tooltip and for assistive tech.
 
 // Levels that turn reasoning off: the scale starts after them, so at one of
-// them no bar is filled.
+// them no segment is lit.
 const OFF = new Set(["none", "off"]);
 
 // The scale drawn for a level the catalog gave no list for (a model set by
@@ -12,8 +13,8 @@ const OFF = new Set(["none", "off"]);
 // longest an agent offers.
 export const FALLBACK_LEVELS = ["low", "medium", "high", "xhigh", "max"];
 
-// More bars than this no longer fit the glyph's height in whole pixels.
-export const MAX_BARS = 7;
+// More segments than this no longer read on a 20px ring.
+export const MAX_SEGMENTS = 7;
 
 const NAMES: Record<string, string> = {
   none: "None",
@@ -36,29 +37,69 @@ export function effortName(level: string): string {
 // (lightest first, as the catalog gives them) and runs at effort: the
 // list, or, when it lists none but a level is set, the fallback scale with
 // that level in it.
-// [] means the model takes no effort, and the composer shows no glyph.
+// [] means the model takes no effort, and the composer shows no dial.
 export function effortLevels(efforts: readonly string[], effort: string): string[] {
   if (efforts.length > 0) return efforts.includes(effort) || effort === "" ? [...efforts] : [...efforts, effort];
   if (effort === "") return [];
   return FALLBACK_LEVELS.includes(effort) ? [...FALLBACK_LEVELS] : [...FALLBACK_LEVELS, effort];
 }
 
-// The glyph for effort on levels: how many bars and how many of them are
-// filled. An off level fills none; the agent's default ("") fills none
-// and says so, so it is drawn as a scale at rest, not as "off".
-export function effortGlyph(levels: readonly string[], effort: string): { count: number; filled: number; auto: boolean } {
-  const startsOff = levels.length > 0 && OFF.has(levels[0] as string);
-  const scale = startsOff ? levels.slice(1) : [...levels];
-  const count = Math.min(MAX_BARS, Math.max(1, scale.length));
-  if (effort === "") return { count, filled: 0, auto: true };
-  const i = scale.indexOf(effort);
-  return { count, filled: i < 0 ? 0 : Math.min(count, i + 1), auto: false };
+// The dial for effort on levels: how many segments, how many of them are
+// lit, and where the pointer stands, in degrees clockwise from twelve
+// o'clock. The ring runs from -135° to 135°, its gap at the bottom. The
+// agent's default ("") lights none and rests the pointer in the gap
+// (-180°, so turning up spins it clockwise the long way round); an off
+// level rests it just before the first segment.
+export interface Dial {
+  count: number;
+  lit: number;
+  auto: boolean;
+  angle: number;
 }
 
-// Bar heights that rise by one whole-pixel step, from about half height up
-// to max (T3 Code's rule: rounding each bar alone mixes 1px and 2px steps,
-// so the step is rounded once).
-export function barHeights(count: number, max: number): number[] {
-  const step = Math.max(1, Math.round(max / 2 / Math.max(count - 1, 1)));
-  return Array.from({ length: count }, (_, i) => max - (count - 1 - i) * step);
+// The ring's sweep and the gap between two segments, in degrees.
+export const SWEEP = 270;
+export const GAP = 14;
+const START = -SWEEP / 2;
+
+export function effortDial(levels: readonly string[], effort: string): Dial {
+  const startsOff = levels.length > 0 && OFF.has(levels[0] as string);
+  const scale = startsOff ? levels.slice(1) : [...levels];
+  const count = Math.min(MAX_SEGMENTS, Math.max(1, scale.length));
+  if (effort === "") return { count, lit: 0, auto: true, angle: -180 };
+  const i = scale.indexOf(effort);
+  const lit = i < 0 ? 0 : Math.min(count, i + 1);
+  return { count, lit, auto: false, angle: lit === 0 ? START - GAP : segmentCentre(count, lit - 1) };
+}
+
+// The ring's segments, each as its start and end angle.
+export function dialSegments(count: number): Array<[number, number]> {
+  const seg = (SWEEP - (count - 1) * GAP) / count;
+  return Array.from({ length: count }, (_, i) => {
+    const a = START + i * (seg + GAP);
+    return [a, a + seg];
+  });
+}
+
+function segmentCentre(count: number, i: number): number {
+  const [a, b] = dialSegments(count)[i] as [number, number];
+  return (a + b) / 2;
+}
+
+// An SVG arc path round (c, c) at radius r from angle a to b (degrees,
+// clockwise from twelve o'clock).
+export function arcPath(c: number, r: number, a: number, b: number): string {
+  const pt = (deg: number) => {
+    const rad = (deg * Math.PI) / 180;
+    return `${(c + r * Math.sin(rad)).toFixed(3)} ${(c - r * Math.cos(rad)).toFixed(3)}`;
+  };
+  return `M ${pt(a)} A ${r} ${r} 0 ${b - a > 180 ? 1 : 0} 1 ${pt(b)}`;
+}
+
+// The level steps away from effort on the dial's stops: the agent's
+// default, then each level, lightest first. It stops at either end.
+export function effortStep(levels: readonly string[], effort: string, steps: number): string {
+  const stops = ["", ...levels];
+  const at = Math.max(0, stops.indexOf(effort));
+  return stops[Math.min(stops.length - 1, Math.max(0, at + steps))] as string;
 }

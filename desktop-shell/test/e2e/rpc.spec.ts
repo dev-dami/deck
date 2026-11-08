@@ -130,16 +130,16 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   expect(fake.modelRefreshes).toBe(1);
 });
 
-test("the composer shows the lead's effort as a glyph, and a click picks the level", async ({ page }) => {
+test("the composer shows the lead's effort as a dial that turns, and a click picks the level", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
   await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
-  // No word in the bar: bars filled to the level, its name for the tooltip.
+  // No word in the bar: segments lit to the level, its name for the tooltip.
   const dial = page.locator(".effort-picker");
   await expect(dial).toHaveAttribute("data-effort", "high");
   await expect(dial).toHaveAttribute("title", "Reasoning effort: High");
-  await expect(dial.locator(".effort-glyph")).toHaveAttribute("data-filled", "3");
-  await expect(page.locator(".lead-picker")).not.toContainText("high");
+  await expect(dial.locator(".effort-dial")).toHaveAttribute("data-lit", "3");
+  await expect(page.locator(".lead-control")).not.toContainText("high");
   await dial.click();
   const levels = page.getByRole("menu", { name: "Reasoning effort" });
   await expect(levels.getByRole("menuitemradio")).toHaveText(["Default", "Low", "Medium", "High", "Extra high", "Max"]);
@@ -148,7 +148,36 @@ test("the composer shows the lead's effort as a glyph, and a click picks the lev
   await expect(levels).toHaveCount(0);
   await expect.poll(() => fake.deck.modelSets.at(-1)).toEqual({ kind: "claude", model: "", effort: "max" });
   await expect(dial).toHaveAttribute("data-effort", "max");
-  await expect(dial.locator(".effort-glyph")).toHaveAttribute("data-filled", "5");
+  await expect(dial.locator(".effort-dial")).toHaveAttribute("data-lit", "5");
+
+  // The arrows turn it at once and apply once it rests; Home rests it at the default.
+  const sets = fake.deck.modelSets.length;
+  await dial.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(dial).toHaveAttribute("data-effort", "high");
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("high");
+  expect(fake.deck.modelSets.length).toBe(sets + 1);
+  await page.keyboard.press("Home");
+  await expect(dial.locator(".effort-dial")).toHaveAttribute("data-auto", "");
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("");
+
+  // The wheel turns it up, a notch a level.
+  await dial.hover();
+  await page.mouse.wheel(0, -100);
+  await expect(dial).toHaveAttribute("data-effort", "low");
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("low");
+
+  // A drag to the right turns it up and opens nothing.
+  const box = (await dial.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.move(box.x + box.width / 2 + 32, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect(dial).toHaveAttribute("data-effort", "high");
+  await expect(levels).toHaveCount(0);
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("high");
 });
 
 test("$pi starts a pi lane, and its picker offers the models pi has a key for", async ({ page }) => {

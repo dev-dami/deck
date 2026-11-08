@@ -91,7 +91,7 @@ export const TOUR_STEPS: readonly TourStep[] = [
     screen: "shell",
     target: ".effort-picker",
     title: "How hard it thinks",
-    body: "The bars after the agent are its reasoning effort: more bars think longer and answer slower. Click them to pick a level, or leave it at the agent's default.",
+    body: "The dial on the agent is its reasoning effort: turned up, it thinks longer and answers slower. Drag or scroll it, or click it to pick a level; at rest it leaves the agent's default.",
   },
   {
     id: "home",

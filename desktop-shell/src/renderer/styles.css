@@ -3325,43 +3325,101 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   transition: none;
 }
 
-/* ---- The effort glyph (ui/EffortGlyph.tsx, design-glass.md section 12) --
-   A model's reasoning effort as T3 Code draws it: rising 2px bars on whole
-   pixels, one per level, filled to the level and the rest dimmed, in the
-   text's colour. The agent's own level (data-auto) dims every bar alike,
-   a little brighter than an unlit one, so it reads as a scale at rest and
-   not as "off". A new level fills or empties bar by bar (--i staggers
-   them). */
-.effort-bar {
-  fill: currentColor;
-  opacity: 0.32;
-  transition: opacity 200ms var(--ease) calc(var(--i, 0) * 30ms);
+/* ---- The effort dial (ui/EffortDial.tsx, design-glass.md section 12) ---
+   A model's reasoning effort as a dial: a ring of segments, one per level,
+   lit up to the level in the agent's hue (--hue, else the accent), round a
+   flat cap whose pointer turns to it. A new level spins the cap on the
+   spring and lights or darkens the segments one after another (--d counts
+   them from the side it turned from), so the light follows the pointer.
+   The agent's own level (data-auto) rests the pointer in the ring's gap
+   and shows the ring a little brighter than unlit, a scale at rest rather
+   than "off". */
+.effort-dial {
+  overflow: visible;
 }
-.effort-bar.on {
+.dial-seg {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.75;
+  opacity: 0.2;
+  transition:
+    opacity 180ms var(--ease) calc(var(--d, 0) * 55ms),
+    stroke 180ms var(--ease) calc(var(--d, 0) * 55ms);
+}
+.dial-seg.on {
+  stroke: var(--hue, var(--primary));
   opacity: 1;
 }
-.effort-glyph[data-auto] .effort-bar {
-  opacity: 0.55;
+.effort-dial[data-auto] .dial-seg {
+  opacity: 0.34;
 }
-:root[data-mode="light"] .effort-bar:not(.on) {
-  opacity: 0.26;
+:root[data-mode="light"] .dial-seg:not(.on) {
+  opacity: 0.16;
 }
-:root[data-mode="light"] .effort-glyph[data-auto] .effort-bar {
-  opacity: 0.5;
+:root[data-mode="light"] .effort-dial[data-auto] .dial-seg {
+  opacity: 0.3;
 }
-/* The composer's glyph gives a little under the pointer, on the spring. */
-.effort-picker .effort-glyph {
-  transition: scale 480ms var(--spring);
+.dial-cap {
+  transform-box: view-box;
+  transform-origin: center;
+  transition: rotate 680ms var(--spring);
 }
-.effort-picker:active .effort-glyph {
-  scale: 0.86;
+.dial-face {
+  fill: color-mix(in srgb, var(--text) 9%, transparent);
+  stroke: var(--hairline-strong);
+  stroke-width: 1;
 }
-/* In the levels' column the glyph lights with its row. */
-.effort-level:is(:hover, :focus-visible, [aria-checked="true"]) .effort-glyph {
-  color: var(--text);
+.dial-pointer {
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linecap: round;
 }
-:root[data-motion="reduced"] :is(.effort-bar, .effort-picker .effort-glyph) {
+.effort-dial[data-auto] .dial-pointer {
+  stroke: var(--text-faint);
+}
+/* The bar's dial lifts its face under the pointer and while it is open. */
+.effort-picker:is(:hover, [aria-expanded="true"], :focus-visible) .dial-face {
+  fill: color-mix(in srgb, var(--text) 14%, transparent);
+}
+/* In the levels' column a row's dial lights with the row. */
+.effort-level:not(:hover, :focus-visible, [aria-checked="true"]) .effort-dial {
+  opacity: 0.8;
+}
+:root[data-motion="reduced"] :is(.dial-seg, .dial-cap) {
   transition: none;
+}
+
+/* ---- The lead's control (ui/LeadPicker.tsx) ----------------------------
+   The agent's chip and its effort dial as one capsule on a hairline (in
+   Liquid Glass, clear glass). A new agent or model slides up into the
+   chip; the control eases to its width in script, on the spring. The
+   agent picker rises out of the bar from the chip's corner. */
+:root[data-material="glass"] .lead-control {
+  @apply liquid-clear;
+}
+.lead-swap {
+  animation: lead-swap 460ms var(--spring) both;
+}
+@keyframes lead-swap {
+  from {
+    opacity: 0;
+    translate: 0 60%;
+    filter: blur(2px);
+  }
+}
+:root:not([data-material="glass"]) .lead-pop {
+  transform-origin: 0 100%;
+  animation: lead-pop 360ms var(--spring) both;
+}
+@keyframes lead-pop {
+  from {
+    opacity: 0;
+    scale: 0.94;
+    translate: 0 6px;
+  }
+}
+:root[data-motion="reduced"] :is(.lead-swap, .lead-pop) {
+  animation: none;
 }
 
 /* ---- Project tiles (ui/ProjectIcon.tsx, projectIcon.ts) ----------------

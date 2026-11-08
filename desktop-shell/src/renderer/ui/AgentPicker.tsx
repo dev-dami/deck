@@ -1,11 +1,11 @@
 import type { ServerInfo, Theme } from "@web/protocol";
 import { kindColour, kindMark } from "@web/theme";
-import { type ComponentProps, type ReactNode, useState } from "react";
+import { type ComponentProps, type CSSProperties, type ReactNode, useRef, useState } from "react";
 import { type AgentModels, currentModel, DEFAULT_LABEL, modelRows, useAgentCatalog } from "../agentCatalog";
 import type { DeckClient } from "../client";
-import { effortGlyph, effortName } from "../effort";
+import { effortDial, effortName } from "../effort";
 import { cn } from "../lib/cn";
-import { EffortGlyph } from "./EffortGlyph";
+import { Dial, useTurn } from "./EffortDial";
 import { Check, Loader2, RefreshCw } from "./icons";
 import { MenuItem } from "./kit/menu";
 
@@ -64,7 +64,7 @@ function ModelCell({ checked, label, detail, ...props }: Omit<ComponentProps<"bu
   );
 }
 
-// One segment of a segmented control: an agent kind, or an effort.
+// One segment of a segmented control: an agent kind or a named agent.
 function Segment({ checked, className, ...props }: Omit<ComponentProps<"button">, "role"> & { checked: boolean }) {
   return (
     <button
@@ -131,9 +131,10 @@ const ago = (at: number, now: number) => {
 // The one agent picker, for every agent alike, laid out wide and short:
 // the agent as a segmented control (when the picker starts one; a lane's
 // picker is for its own), the models as a two-column grid of one-line
-// cells, then one bar with the model's reasoning efforts as a segmented
-// control of effort glyphs, Refresh and the action. Each section shows only when it has a
-// choice. The radios only choose; the action applies the choice. The lists
+// cells, or one column when the model's reasoning efforts dock beside them
+// (the effort dial over the levels by name, after T3 Code's docked
+// reasoning column), then one bar with Refresh and the action. Each
+// section shows only when it has a choice. The radios only choose; the action applies the choice. The lists
 // come from the catalog (agentCatalog.ts), already loaded: opening a picker
 // asks nothing.
 export function AgentPicker({
@@ -186,6 +187,9 @@ export function AgentPicker({
     const keeps = rows.find((m) => m.id === id)?.efforts.includes(choice.effort) === true;
     setChoice({ model: id, effort: keeps ? choice.effort : "" });
   };
+  const setEffort = (e: string) => setChoice((c) => ({ ...c, effort: e }));
+  const dialRef = useRef<HTMLDivElement>(null);
+  const turn = useTurn(dialRef, efforts, choice.effort, setEffort, efforts.length > 0);
   const mark = (of: string, color?: string) => (
     <span aria-hidden className="font-mono text-[11px] leading-none" style={{ color: color || kindColour(of) }}>
       {kindMark(theme, of) || "●"}
@@ -213,43 +217,61 @@ export function AgentPicker({
           </div>
         ))}
       {k !== "" && (
-        <>
-          <div className="pick-models grid max-h-52 grid-cols-2 gap-0.5 overflow-y-auto" role="group" aria-label="Model">
-            {rows.map((m) => (
-              <ModelCell
-                key={m.id}
-                checked={m.id === model?.id}
-                label={m.label}
-                detail={m.id !== "" && m.label.toLowerCase() !== m.id.toLowerCase() ? m.id : ""}
-                title={m.id === "" ? (namedK === undefined ? `The model ${kk} picks itself` : `${k}'s own model`) : m.id}
-                onClick={() => pickModel(m.id)}
-              />
-            ))}
+        <div className="pick-body flex min-h-0 gap-1.5">
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <div className={cn("pick-models grid max-h-52 gap-0.5 overflow-y-auto", efforts.length > 0 ? "grid-cols-1" : "grid-cols-2")} role="group" aria-label="Model">
+              {rows.map((m) => (
+                <ModelCell
+                  key={m.id}
+                  checked={m.id === model?.id}
+                  label={m.label}
+                  detail={m.id !== "" && m.label.toLowerCase() !== m.id.toLowerCase() ? m.id : ""}
+                  title={m.id === "" ? (namedK === undefined ? `The model ${kk} picks itself` : `${k}'s own model`) : m.id}
+                  onClick={() => pickModel(m.id)}
+                />
+              ))}
+            </div>
+            {agents === null && loading && (
+              <p className="flex items-center gap-2 px-2 text-muted-foreground text-xs">
+                <Loader2 className="size-3 animate-spin" /> Listing models…
+              </p>
+            )}
+            {entry?.failed === true && <p className="px-2 text-muted-foreground text-xs">Deck could not list {kk}'s models.</p>}
           </div>
-          {agents === null && loading && (
-            <p className="flex items-center gap-2 px-2 text-muted-foreground text-xs">
-              <Loader2 className="size-3 animate-spin" /> Listing models…
-            </p>
+          {efforts.length > 0 && (
+            // The model's efforts, docked beside the models as T3 Code
+            // docks its reasoning column: the dial, turning to the level
+            // picked (drag it or scroll over it), then each level by name.
+            <div
+              className="pick-effort flex w-32 shrink-0 flex-col gap-px border-hairline border-l pl-1.5"
+              role="group"
+              aria-label="Reasoning effort"
+              style={{ "--hue": namedK?.color || kindColour(kk) } as CSSProperties}
+            >
+              <div ref={dialRef} className="pick-dial flex cursor-grab touch-none select-none justify-center pt-1 pb-1.5 active:cursor-grabbing" {...turn.handlers}>
+                <Dial dial={effortDial(efforts, turn.shown)} size={40} />
+              </div>
+              {["", ...efforts].map((e) => (
+                <button
+                  key={e}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={choice.effort === e}
+                  title={e === "" ? "The agent's own effort" : undefined}
+                  className={cn(
+                    "pick-level flex h-6 w-full shrink-0 cursor-pointer items-center rounded-[7px] px-2 text-left text-muted-foreground text-xs outline-none transition-colors hover:bg-hover hover:text-foreground focus-visible:bg-selected",
+                    choice.effort === e && "bg-selected font-medium text-foreground hover:bg-selected",
+                  )}
+                  onClick={() => setEffort(e)}
+                >
+                  {e === "" ? DEFAULT_LABEL : effortName(e)}
+                </button>
+              ))}
+            </div>
           )}
-          {entry?.failed === true && <p className="px-2 text-muted-foreground text-xs">Deck could not list {kk}'s models.</p>}
-        </>
+        </div>
       )}
       <div className="pick-bar flex items-center gap-1 border-hairline border-t pt-1">
-        {k !== "" && efforts.length > 0 && (
-          <div className={segments} role="group" aria-label="Reasoning effort">
-            <Segment checked={choice.effort === ""} title="The agent's own effort" onClick={() => setChoice({ ...choice, effort: "" })}>
-              {DEFAULT_LABEL}
-            </Segment>
-            {/* Each level as the composer's bar shows it: its glyph, the
-                name for the tooltip and assistive tech. */}
-            {efforts.map((e) => (
-              <Segment key={e} className="effort px-1" checked={choice.effort === e} title={effortName(e)} onClick={() => setChoice({ ...choice, effort: e })}>
-                <EffortGlyph {...effortGlyph(efforts, e)} height={12} />
-                <span className="sr-only">{effortName(e)}</span>
-              </Segment>
-            ))}
-          </div>
-        )}
         <MenuItem
           className="ml-auto w-auto shrink-0 text-muted-foreground text-xs"
           aria-label="Refresh agents"

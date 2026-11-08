@@ -76,7 +76,7 @@ test("the palette starts the tour, which steps past what is not there and never 
   await at(page, "composer");
   await page.keyboard.press("ArrowRight");
   await page.keyboard.press("ArrowRight");
-  // The effort glyph after the agent's chip is there on a new thread too.
+  // The effort dial on the agent's chip is there on a new thread too.
   await at(page, "effort");
   await expect(page.locator(".tour-spot")).not.toHaveAttribute("data-empty", "");
   await expect(card(page)).toContainText("reasoning effort");
@@ -103,7 +103,7 @@ test("the palette starts the tour, which steps past what is not there and never 
   await card(page).getByRole("button", { name: "Back" }).click();
   await at(page, "views");
   await shot(page, "views");
-  // The home cards are passed, back to the effort glyph, then the mode menu.
+  // The home cards are passed, back to the effort dial, then the mode menu.
   await page.keyboard.press("ArrowLeft");
   await at(page, "effort");
   await page.keyboard.press("ArrowLeft");

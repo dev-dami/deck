@@ -523,7 +523,7 @@ lip and a shade in the lower (`--glass-inset`).
 - In Liquid Glass, menus, popovers, dialogs and toasts bloom open from a
   drop (`liquid-bloom`): squashed, a small overshoot, then still.
 
-## 12. The mode menu, the effort glyph and the first screens
+## 12. The mode menu, the lead's control, the effort dial and the first screens
 
 **The mode menu** (`ui/ModePicker.tsx`). The session's mode (Plan, Ask,
 Yolo) is a word, not a dial: a pill in the composer's bar with the mode's
@@ -533,32 +533,58 @@ each mode's icon, name and what it does, the current one checked. Yolo
 asks first; a room in yolo keeps the rainbow border on the pill, and the
 amber flash (`[data-yolo-flash]`) stands in for the shockwave.
 
-**The effort glyph** (`ui/EffortGlyph.tsx`, `ui/EffortPicker.tsx`, the
-levels in `effort.ts`, "The effort glyph" in styles.css), after T3 Code's
-effort bars (`apps/web/src/components/chat/EffortGlyph.tsx` there). The
-lead's reasoning effort shows with no word, right after the agent's chip:
+**The lead's control** (`ui/LeadPicker.tsx`, "The lead's control" in
+styles.css), after T3 Code's single model-and-effort control
+(`apps/web/src/components/chat/ComposerModelEffort.tsx` there). The agent
+the person talks to and its effort are one capsule on a hairline
+(`.lead-control`; clear glass in Liquid Glass): the agent's chip (its mark
+in its hue, its name, the model when the bar has room, the status dot)
+and, after a hairline, the effort dial. There is no chevron.
 
-- Rising bars, 2px wide on a 4px step in a 14px box, their base on the
-  text's baseline, heights rising in one whole-pixel step from about half
-  to full, so they stay sharp at 1x. One bar per level the model takes
-  (the catalog's list, lightest first; an off level such as `none` is no
-  bar and fills none; seven at most), filled up to the level it runs at.
-- Colour is the text's: lit bars full, the rest at 32% (26% in light).
-  The agent's own level (`""`, `data-auto`) dims every bar alike at 55%,
-  a scale at rest rather than "off". A new level fills or empties bar by
-  bar (`--i` staggers 30ms); the glyph gives under the pointer on
-  `--spring`. Reduced motion holds both still.
+- A new agent or model slides up into the chip (`.lead-swap`, 460ms on
+  `--spring`, from 60% below, faded and a little blurred), and the
+  capsule eases from its old width to its new one on the same spring (a
+  Web Animation, clipped while it runs).
+- The chip opens the agent picker, which rises out of the bar from the
+  chip's corner (`.lead-pop`: from 94% and 6px lower, on the spring; Liquid
+  Glass keeps its bloom).
+- In the agent picker the model's efforts dock beside the models, as T3
+  Code docks its reasoning column: a 40px dial that turns to the level
+  picked (drag it or scroll over it), then each level by name (Default,
+  None, Minimal, Low, Medium, High, Extra high, Max). With a docked column
+  the models are one column; without one, two.
+
+**The effort dial** (`ui/EffortDial.tsx`, the geometry in `effort.ts`, "The
+effort dial" in styles.css). The lead's reasoning effort shows with no
+word, as a dial attached to the end of the chip:
+
+- A 20px ring of segments round a flat cap. The ring sweeps 270°, its gap
+  at the bottom; one segment per level the model takes (the catalog's
+  list, lightest first; an off level such as `none` is no segment; seven
+  at most), 14° apart, 1.75 wide on an 8.25 radius.
+- Segments are lit up to the level in the agent's hue (`--hue`, else
+  `--primary`); the rest are the text's colour at 20% (16% in light). The
+  cap is the text at 9% with a `--hairline-strong` rim; its pointer is the
+  text's colour and stands at the middle of the level's segment. The
+  agent's own level (`""`, `data-auto`) rests the pointer in the gap, faint,
+  over a ring at 34%: a dial at rest, not "off". An off level rests it just
+  before the first segment.
+- Turning spins the cap (`rotate`, 680ms on `--spring`, so it overshoots a
+  little and settles) and lights or darkens the segments one after another
+  in the direction it turned (`--d`, 55ms apart), so the light follows the
+  pointer. Default to Max is a long clockwise turn round the gap. Reduced
+  motion holds it still.
+- Drag it (right or up turns it up, 14px a level), scroll over it (a
+  wheel's notch a level) or use the arrows while it has the focus (Home
+  rests it at the default, End turns it all the way). It shows the level at
+  once and applies it (`setModel` with the lead's model) when the drag ends
+  or once the wheel and keys have rested 450ms. A click opens the levels as
+  a short column ("Effort" over the model's name): Default, then each level
+  with a 16px dial and its name, the current one checked, applied at once.
 - The name lives in the `title`, the `aria-label` and an `sr-only` span
-  ("Reasoning effort: High"); the levels read as Default, None, Minimal,
-  Low, Medium, High, Extra high (`xhigh`) and Max.
-- A click opens the levels as a short column (`Popover`, "Effort" over
-  the model's name): Default, then each level with its glyph and name, the
-  current one checked; a pick applies at once (`setModel` with the lead's
-  model and the new effort). A model that takes no effort shows no glyph;
+  ("Reasoning effort: High"). A model that takes no effort shows no dial;
   one the catalog lists without levels but that runs at one is drawn on
   Claude Code's scale (low to max).
-- In the agent picker the effort bar is the same glyphs as a segmented
-  control after Default, each level's name in its tooltip.
 
 **The first screens.** The Welcome ("One deck for all your agents") and
 the connect screen ("What should we work on?") are the home's family, in
@@ -637,13 +663,13 @@ material.
 Deck, and the agent CLIs. A project's window has ten: a look around, the
 threads (`nav[aria-label="Threads"]`, the sidebar or the top bar), the
 composer and its `$agent`, `@` and `#` mentions, the mode menu (Plan / Ask
-/ Yolo), the effort glyph (`.effort-picker`), the home cards (`section.home`), Conversation / Graph
+/ Yolo), the effort dial (`.effort-picker`), the home cards (`section.home`), Conversation / Graph
 (`.room-views`), the diff and panels (`.panel-toggles`), the palette
 (⌘/Ctrl+K) and Settings › Appearance (the Settings button in the sidebar's
 foot, or in the top bar's tools). Each finds its target by selector when
 it shows (a selector can name it in each layout, and the first match on
 screen wins); a step whose target is not on screen is passed over (the
-home cards in an open thread, the views on a new one, the effort glyph for
+home cards in an open thread, the views on a new one, the effort dial for
 a model that takes none). The mode menu lives only in a thread, so its step
 shows in the middle without it.
 
