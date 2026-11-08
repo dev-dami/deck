@@ -3162,84 +3162,216 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* ---- The mode dial (ui/ModePicker.tsx, design-glass.md section 12) ------
-   A knob, not a word: a fine bezel, a domed cap lit from the top left, and
-   a pointer in the mode's hue (--dial-hue) turned to it (--dial-angle) on
-   a spring. In the dial, a scale of ticks, the track and the arc lit to
-   the chosen mode, and the modes round it as stops. */
-.dial-bezel {
-  background: conic-gradient(
-    from 200deg,
-    color-mix(in srgb, var(--text) 30%, transparent),
-    color-mix(in srgb, var(--text) 6%, transparent) 28%,
-    color-mix(in srgb, var(--text) 22%, transparent) 52%,
-    color-mix(in srgb, var(--text) 5%, transparent) 78%,
-    color-mix(in srgb, var(--text) 30%, transparent)
-  );
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
-  transition: box-shadow 200ms;
+   A machined knob, not a word. The cap is a knurled rim round a brushed
+   face, lit from above; the rim and the notch turn to the mode
+   (--dial-angle) on a spring while the light stays put. The notch and the
+   mode's mark are lit in its hue (--dial-hue). --k is the cap's size, so
+   one set of rules draws the small knob in the composer and the large one
+   in the dial. */
+.dial-knob {
+  /* The metal: graphite anodised in the dark, satin aluminium in the light. */
+  --cap-hi: color-mix(in srgb, var(--surface-2), #fff 13%);
+  --cap-mid: color-mix(in srgb, var(--surface-2), #000 10%);
+  --cap-lo: color-mix(in srgb, var(--surface-1), #000 42%);
+  --knurl-a: color-mix(in srgb, var(--surface-2), #fff 9%);
+  --knurl-b: color-mix(in srgb, var(--surface-1), #000 50%);
+  --brush: rgb(255 255 255 / 0.035);
+  --light-top: rgb(255 255 255 / 0.2);
+  --light-bottom: rgb(0 0 0 / 0.5);
+  --bevel: rgb(255 255 255 / 0.16);
+  --seam: rgb(0 0 0 / 0.55);
+  --drop: 0 0 0 0.5px rgb(0 0 0 / 0.7), 0 1px 1px rgb(0 0 0 / 0.45), 0 2px 5px -1px rgb(0 0 0 / 0.6);
+  --rim: 14%;
+  --tooth: 9deg;
+  --notch-w: 2px;
+  --notch-h: 24%;
+  position: relative;
+  display: block;
+  flex-shrink: 0;
+  width: var(--k);
+  height: var(--k);
+  border-radius: 50%;
 }
+.dial-knob.large {
+  --knurl-a: color-mix(in srgb, var(--surface-2), #fff 15%);
+  --rim: 9%;
+  --tooth: 5deg;
+  --notch-w: 3px;
+  --notch-h: 27%;
+  --drop: 0 0 0 0.5px rgb(0 0 0 / 0.7), 0 1px 1px rgb(0 0 0 / 0.5), 0 6px 14px -3px rgb(0 0 0 / 0.65), 0 14px 24px -10px rgb(0 0 0 / 0.5);
+}
+:root[data-mode="light"] .dial-knob {
+  --cap-hi: #ffffff;
+  --cap-mid: #ececef;
+  --cap-lo: #c4c4ca;
+  --knurl-a: #ffffff;
+  --knurl-b: #cdcdd3;
+  --brush: rgb(0 0 0 / 0.025);
+  --light-top: rgb(255 255 255 / 0.55);
+  --light-bottom: rgb(0 0 0 / 0.16);
+  --bevel: #fff;
+  --seam: rgb(0 0 0 / 0.16);
+  --drop: 0 0 0 0.5px rgb(0 0 0 / 0.2), 0 1px 1px rgb(0 0 0 / 0.14), 0 2px 4px -1px rgb(0 0 0 / 0.18);
+}
+:root[data-mode="light"] .dial-knob.large {
+  --knurl-b: #b4b4bc;
+  --drop: 0 0 0 0.5px rgb(0 0 0 / 0.16), 0 1px 1px rgb(0 0 0 / 0.12), 0 6px 14px -4px rgb(0 0 0 / 0.22), 0 14px 24px -12px rgb(0 0 0 / 0.2);
+}
+
+/* The machined seat the large knob turns in. */
+.dial-seat {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  background: color-mix(in srgb, #000 22%, transparent);
+  box-shadow:
+    inset 0 1.5px 3px rgb(0 0 0 / 0.55),
+    0 0.5px 0 rgb(255 255 255 / 0.07);
+}
+:root[data-mode="light"] .dial-seat {
+  background: rgb(0 0 0 / 0.045);
+  box-shadow:
+    inset 0 1.5px 3px rgb(0 0 0 / 0.14),
+    0 0.5px 0 #fff;
+}
+
 .dial-cap {
-  background: radial-gradient(circle at 34% 28%, color-mix(in srgb, var(--text) 20%, var(--surface-2)), var(--surface-1) 58%, color-mix(in srgb, #000 35%, var(--surface-1)));
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 -2px 3px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.5);
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: 50%;
+  box-shadow: var(--drop);
+  isolation: isolate;
 }
-:root[data-mode="light"] .dial-cap {
-  background: radial-gradient(circle at 34% 28%, #fff, var(--surface-2) 55%, color-mix(in srgb, #000 10%, var(--surface-2)));
-  box-shadow: inset 0 1px 0 #fff, inset 0 -2px 3px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.12), 0 2px 6px -2px rgb(0 0 0 / 0.2);
+/* The rim: fine teeth that turn with the knob. */
+.dial-knurl {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-conic-gradient(var(--knurl-a) 0deg calc(var(--tooth) * 0.45), var(--knurl-b) calc(var(--tooth) * 0.55) var(--tooth));
 }
-.dial-pointer {
+/* The light on the rim, which does not turn. */
+.dial-cap::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: 50%;
+  background: linear-gradient(to bottom, var(--light-top), transparent 48%, var(--light-bottom));
+}
+/* The face: brushed, catching the light at two fixed angles, with a bevel
+   where it meets the rim. */
+.dial-face {
+  position: absolute;
+  inset: var(--rim);
+  z-index: 2;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle, var(--brush) 0 0.5px, transparent 0.5px 1.5px),
+    radial-gradient(circle at 50% 18%, color-mix(in srgb, var(--cap-hi) 35%, transparent), transparent 62%),
+    conic-gradient(
+      from 0deg,
+      var(--cap-mid),
+      var(--cap-hi) 45deg,
+      var(--cap-mid) 90deg,
+      var(--cap-lo) 145deg,
+      var(--cap-mid) 180deg,
+      var(--cap-hi) 225deg,
+      var(--cap-mid) 270deg,
+      var(--cap-lo) 325deg,
+      var(--cap-mid)
+    );
+  box-shadow:
+    0 0 0 0.5px var(--seam),
+    inset 0 0.5px 0 var(--bevel),
+    inset 0 -1px 1px rgb(0 0 0 / 0.18);
+}
+.dial-arm {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+}
+.dial-knurl,
+.dial-arm {
   transform: rotate(var(--dial-angle, 0deg));
-  transition: transform 560ms var(--spring);
+  transition: transform 620ms var(--spring);
 }
-.dial-tick {
+/* The notch: a lit line from the face's edge towards its centre. */
+.dial-notch {
+  position: absolute;
+  top: calc(var(--rim) + 5%);
+  left: 50%;
+  width: var(--notch-w);
+  height: var(--notch-h);
+  translate: -50% 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--dial-hue), #fff 12%);
+  box-shadow:
+    0 0 0 0.5px color-mix(in srgb, var(--dial-hue), #000 45%),
+    0 0 calc(var(--k) * 0.12) color-mix(in srgb, var(--dial-hue) 75%, transparent);
+  transition:
+    background-color 200ms,
+    box-shadow 200ms;
+}
+:root[data-mode="light"] .dial-notch {
   background: var(--dial-hue);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--dial-hue) 70%, transparent);
-  transition: background-color 200ms;
+  box-shadow: 0 0 calc(var(--k) * 0.1) color-mix(in srgb, var(--dial-hue) 55%, transparent);
 }
-.mode-picker:hover .dial-bezel,
-.mode-picker[aria-expanded="true"] .dial-bezel {
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 2px color-mix(in srgb, var(--dial-hue) 40%, transparent);
+
+/* The composer's knob: a mark for each mode round its top, the chosen one
+   lit. */
+.dial-mark {
+  stroke: color-mix(in srgb, var(--text) 26%, transparent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  transition: stroke 200ms;
 }
-.mode-picker:active .dial-knob {
-  scale: 0.92;
+.dial-mark.on {
+  stroke: var(--dial-hue);
+  filter: drop-shadow(0 0 1.5px color-mix(in srgb, var(--dial-hue) 80%, transparent));
 }
 .mode-picker .dial-knob {
   transition: scale 480ms var(--spring);
 }
-.dial-face .dial-tick {
-  width: 3px;
+.mode-picker:hover .dial-mark:not(.on) {
+  stroke: color-mix(in srgb, var(--text) 45%, transparent);
 }
-.dial-face:focus-visible {
-  outline: none;
+.mode-picker:active .dial-knob {
+  scale: 0.9;
 }
-.dial-face:focus-visible .dial-bezel {
-  box-shadow: 0 0 0 2px var(--ring);
+.mode-picker[aria-expanded="true"] .dial-cap {
+  box-shadow:
+    var(--drop),
+    0 0 0 2px color-mix(in srgb, var(--dial-hue) 35%, transparent);
 }
+
+/* The dial: a fine scale, a major mark at each mode, and its icon as a
+   stop. */
 .dial-scale {
-  stroke: var(--hairline-strong);
+  stroke: color-mix(in srgb, var(--text) 20%, transparent);
   stroke-width: 1;
-}
-.dial-track,
-.dial-lit {
-  fill: none;
-  stroke-width: 3;
   stroke-linecap: round;
 }
-.dial-track {
-  stroke: color-mix(in srgb, var(--text) 9%, transparent);
+.dial-major {
+  stroke: color-mix(in srgb, var(--text) 38%, transparent);
+  stroke-width: 2;
+  stroke-linecap: round;
+  transition: stroke 200ms;
 }
-.dial-lit {
-  transition:
-    stroke-dasharray 560ms var(--spring),
-    stroke 200ms;
+.dial-major.on {
+  stroke: var(--mark-hue);
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--mark-hue) 75%, transparent));
 }
-[data-dragging] .dial-lit,
-[data-dragging] .dial-pointer {
+.dial-turn:focus-visible .dial-seat {
+  box-shadow:
+    inset 0 1.5px 3px rgb(0 0 0 / 0.4),
+    0 0 0 2px var(--ring);
+}
+[data-dragging] :is(.dial-knurl, .dial-arm) {
   transition: none;
 }
 .dial-stop {
-  color: var(--text-muted);
-  background: color-mix(in srgb, var(--text) 5%, transparent);
-  box-shadow: inset 0 0 0 1px var(--hairline);
+  color: var(--text-faint);
   transition:
     background-color 160ms,
     color 160ms,
@@ -3248,16 +3380,20 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 .dial-stop:hover {
   color: var(--text);
-  scale: 1.1;
+  background: var(--hover);
+  scale: 1.08;
+}
+.dial-stop.near {
+  color: var(--stop-hue);
 }
 .dial-stop.on {
   color: var(--stop-hue);
-  background: color-mix(in srgb, var(--stop-hue) 16%, transparent);
+  background: color-mix(in srgb, var(--stop-hue) 14%, transparent);
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--stop-hue) 55%, transparent),
-    0 0 16px -3px color-mix(in srgb, var(--stop-hue) 60%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--stop-hue) 45%, transparent),
+    0 0 14px -4px color-mix(in srgb, var(--stop-hue) 70%, transparent);
 }
-:root[data-motion="reduced"] :is(.dial-pointer, .dial-lit, .dial-stop, .mode-picker .dial-knob) {
+:root[data-motion="reduced"] :is(.dial-knurl, .dial-arm, .dial-notch, .dial-mark, .dial-major, .dial-stop, .mode-picker .dial-knob) {
   transition: none;
 }
 
