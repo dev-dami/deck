@@ -1,5 +1,6 @@
+import { Duration, Effect, Either, Fiber, TestClock, TestContext } from "effect";
 import { describe, expect, test } from "vitest";
-import { type Cdp, type ControlledPage, PageControl, PageError, parseKey, RefError } from "./pageControl";
+import { type Cdp, type ControlledPage, PageControl, PageError, parseKey, RefError, WAIT_LIMITS } from "./pageControl";
 
 describe("parseKey", () => {
   test("names, letters and combinations", () => {
@@ -170,5 +171,36 @@ describe("refs and fields", () => {
     const t = Date.now();
     expect(await control.wait({ ms: 120 })).toBe("waited 120 ms.");
     expect(Date.now() - t).toBeGreaterThanOrEqual(100);
+  });
+});
+
+describe("waiting, on the test clock", () => {
+  // The control's waits are Effects on the Clock, so a TestClock runs them
+  // without real time passing.
+  test("polls for the text until it shows, and says after how long", async () => {
+    let looks = 0;
+    const { control } = page({ "Runtime.evaluate": () => ({ result: { value: ++looks >= 4 } }) });
+    const out = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.fork(control.waitFor({ text: "Done", timeout: 10 }));
+        for (let i = 0; i < 3; i++) yield* TestClock.adjust(Duration.millis(WAIT_LIMITS.pollMs));
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    expect(looks).toBe(4);
+    expect(out).toBe(`the page shows "Done" (after ${WAIT_LIMITS.pollMs * 3} ms).`);
+  });
+
+  test("gives up at the timeout with a PageError", async () => {
+    const { control } = page({ "Runtime.evaluate": () => ({ result: { value: false } }) });
+    const r = await Effect.runPromise(
+      Effect.gen(function* () {
+        const fiber = yield* Effect.fork(Effect.either(control.waitFor({ text: "Done", timeout: 5 })));
+        yield* TestClock.adjust(Duration.seconds(5));
+        return yield* Fiber.join(fiber);
+      }).pipe(Effect.provide(TestContext.TestContext)),
+    );
+    expect(Either.isLeft(r) && r.left).toBeInstanceOf(PageError);
+    expect(Either.isLeft(r) && r.left).toMatchObject({ code: "invalid_request", message: 'waited 5s: the page does not show "Done".' });
   });
 });

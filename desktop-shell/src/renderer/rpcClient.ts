@@ -1,4 +1,5 @@
 import { describeError, Store } from "@web/controller";
+import { Effect } from "effect";
 import { type Outgoing, readAsBase64 } from "@web/images";
 import type { ChangedFile, Decision, Mode, ModelChoice, QuestionAnswer, RaceEntrant, ServerEvent, ServerInfo, Session } from "@web/protocol";
 import type { AppState } from "@web/state";
@@ -6,6 +7,8 @@ import { applyTheme, type ThemeTarget } from "@web/theme";
 import { LiveStore } from "./live";
 import { ProjectApi } from "./project";
 import type { BrowserActionResponse, BrowserCommand, DeckBridge, EngineStop, HighlightActionRequest, LocalDeck, RpcMethod, RpcStreamEvent } from "../shared/bridge";
+import { Backoff, type BridgeError, bridgeError, type RpcError, runPromise } from "../shared/effect";
+import { callMessage, RESUBSCRIBE, rpcEffect } from "./rpcEffect";
 import type { DeckClient } from "./client";
 import type { Level } from "./orchestration";
 import { getPrefs } from "./prefs";
@@ -40,9 +43,6 @@ import {
 } from "./rpcMap";
 
 const PAGE = 100;
-const BACKOFF_MAX_MS = 10_000;
-// gRPC status codes the client names.
-const UNAVAILABLE = 14;
 
 // What a local Deck can do: everything but device pairing. It allows yolo,
 // because the caller is the person at this machine (pkg/rpc SetMode).
@@ -61,8 +61,8 @@ export class RpcDeckClient implements DeckClient {
   // The engine stopped by itself; restart() starts it again.
   private halted = false;
   private restarting = false;
-  private attempt = 0;
-  private retry: ReturnType<typeof setTimeout> | null = null;
+  // Asks for the event stream again after it ended (RESUBSCRIBE).
+  private readonly resubscribe = new Backoff(RESUBSCRIBE);
   private themeVars: string[] = [];
   private readonly off: () => void;
   // The optional methods the Deck serves, from Info.
@@ -100,19 +100,23 @@ export class RpcDeckClient implements DeckClient {
     this.store.dispatch({ type: "toast.add", kind: "error", text });
   }
 
+  private rpc(method: RpcMethod, request: Record<string, unknown>): Effect.Effect<unknown, RpcError | BridgeError> {
+    return rpcEffect(this.bridge, this.deck.id, method, request);
+  }
+
   // One unary call; a failure becomes a toast and null. A quiet call fails
   // with null alone.
-  private async call(method: RpcMethod, request: Record<string, unknown>, quiet = false): Promise<unknown> {
-    let r: Awaited<ReturnType<DeckBridge["rpcCall"]>>;
-    try {
-      r = await this.bridge.rpcCall(this.deck.id, method, request);
-    } catch (e) {
-      if (!quiet) this.toast(describeError(e));
-      return null;
-    }
-    if (r.ok) return r.value;
-    if (!quiet) this.toast(r.code === UNAVAILABLE ? "Deck is not reachable." : r.message || `Deck refused ${method}.`);
-    return null;
+  private call(method: RpcMethod, request: Record<string, unknown>, quiet = false): Promise<unknown> {
+    return runPromise(
+      this.rpc(method, request).pipe(
+        Effect.catchAll((e) =>
+          Effect.sync(() => {
+            if (!quiet) this.toast(callMessage(e, `Deck refused ${method}.`));
+            return null;
+          }),
+        ),
+      ),
+    );
   }
 
   private async boot(): Promise<void> {
@@ -145,7 +149,6 @@ export class RpcDeckClient implements DeckClient {
   }
 
   private subscribe(): void {
-    this.retry = null;
     void this.bridge.rpcSubscribe(this.deck.id, this.epoch, this.seq);
   }
 
@@ -158,7 +161,7 @@ export class RpcDeckClient implements DeckClient {
           const fresh = this.epoch === "" || e.ready.resync;
           this.epoch = e.ready.epoch;
           this.seq = e.ready.seq;
-          this.attempt = 0;
+          this.resubscribe.reset();
           this.store.dispatch({ type: "link", link: "online" });
           void (fresh ? this.refreshAll() : this.refreshOpen());
           return;
@@ -176,15 +179,13 @@ export class RpcDeckClient implements DeckClient {
       case "end": {
         // Resume from the last seq after a pause; the Deck still runs.
         this.store.dispatch({ type: "link", link: "offline" });
-        const wait = Math.min(BACKOFF_MAX_MS, 500 * 2 ** this.attempt++);
-        this.retry = setTimeout(() => this.subscribe(), wait);
+        this.resubscribe.after(() => this.subscribe());
         return;
       }
       case "stopped":
         // The project stays open with what it showed; the window offers a restart.
         this.halted = true;
-        if (this.retry !== null) clearTimeout(this.retry);
-        this.retry = null;
+        this.resubscribe.cancel();
         this.store.dispatch({ type: "link", link: "offline" });
         this.onEngine({ message: ev.message, stderr: ev.stderr });
         return;
@@ -200,12 +201,11 @@ export class RpcDeckClient implements DeckClient {
   async restart(): Promise<void> {
     if (!this.halted || this.stopped || this.restarting) return;
     this.restarting = true;
-    let out: Awaited<ReturnType<DeckBridge["restartFolder"]>>;
-    try {
-      out = await this.bridge.restartFolder(this.deck.id);
-    } catch (e) {
-      out = { ok: false, message: describeError(e) };
-    }
+    const out = await runPromise(
+      Effect.tryPromise({ try: () => this.bridge.restartFolder(this.deck.id), catch: bridgeError }).pipe(
+        Effect.catchAll((e) => Effect.succeed({ ok: false as const, message: describeError(e.cause) })),
+      ),
+    );
     this.restarting = false;
     if (this.stopped) return;
     if (!out.ok) {
@@ -215,7 +215,7 @@ export class RpcDeckClient implements DeckClient {
     this.halted = false;
     this.epoch = "";
     this.seq = 0;
-    this.attempt = 0;
+    this.resubscribe.reset();
     this.onEngine(null);
     await this.boot();
   }
@@ -529,13 +529,12 @@ export class RpcDeckClient implements DeckClient {
   // the editor to show by the fields, not as a toast.
   async saveProfile(p: Profile): Promise<{ ok: true } | { ok: false; message: string }> {
     if (!this.serves("SaveProfile")) return { ok: false, message: "This Deck does not keep profiles." };
-    try {
-      const r = await this.bridge.rpcCall(this.deck.id, "SaveProfile", { profile: { ...p } });
-      if (r.ok) return { ok: true };
-      return { ok: false, message: r.code === UNAVAILABLE ? "Deck is not reachable." : r.message || "Deck refused the profile." };
-    } catch (e) {
-      return { ok: false, message: describeError(e) };
-    }
+    return runPromise(
+      Effect.match(this.rpc("SaveProfile", { profile: { ...p } }), {
+        onFailure: (e) => ({ ok: false as const, message: callMessage(e, "Deck refused the profile.") }),
+        onSuccess: () => ({ ok: true as const }),
+      }),
+    );
   }
 
   async deleteProfile(name: string, scope: ProfileScope): Promise<boolean> {
@@ -552,7 +551,7 @@ export class RpcDeckClient implements DeckClient {
 
   private stop(): void {
     this.stopped = true;
-    if (this.retry !== null) clearTimeout(this.retry);
+    this.resubscribe.cancel();
     this.off();
   }
 }

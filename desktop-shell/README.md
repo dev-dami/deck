@@ -526,7 +526,11 @@ renderer (React, sandboxed)                  main process (Node)                
   the socket, rpc, menu, link, update and notification-click event streams,
   and the path of a
   folder dropped on the window. Nothing else.
-- `src/shared/` holds the bridge types and the CSP.
+- `src/shared/` holds the bridge types, the CSP and `effect.ts`, the
+  helpers that run the app's async work. That work (starting the engine,
+  gRPC calls, page ops, probes, pairing, the renderer's calls, retries and
+  polls) is written with Effect behind the same Promise APIs
+  (`docs/effect.md`).
 - **The UI** is React with Tailwind CSS v4, rebuilt after T3 Code's
   components (`Sidebar`, `ChatHeader`, `MessagesTimeline`, `ChatComposer`,
   `DiffPanel`, the settings layout). `src/renderer/styles.css` holds the

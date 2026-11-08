@@ -1,5 +1,7 @@
 import { lstat, open } from "node:fs/promises";
 import { extname, join } from "node:path";
+import { Effect } from "effect";
+import { runPromise } from "../shared/effect";
 
 // A project's own icon: the logo or favicon its repo already has, in the
 // places projects keep one, for the sidebar's project tile. Main reads it
@@ -66,32 +68,39 @@ export function looksLike(ext: string, b: Buffer): boolean {
 }
 
 // A regular file (not a link out of the folder) of an icon's size, or null.
-async function readIcon(path: string): Promise<Buffer | null> {
-  try {
-    const st = await lstat(path);
+// The file handle is closed however the read ends.
+function readIcon(path: string): Effect.Effect<Buffer | null> {
+  return Effect.gen(function* () {
+    const st = yield* Effect.tryPromise(() => lstat(path));
     if (!st.isFile() || st.size === 0 || st.size > MAX_ICON_BYTES) return null;
-    const f = await open(path, "r");
-    try {
-      const buf = Buffer.alloc(st.size);
-      const { bytesRead } = await f.read(buf, 0, st.size, 0);
-      return buf.subarray(0, bytesRead);
-    } finally {
-      await f.close();
-    }
-  } catch {
-    return null;
-  }
+    return yield* Effect.acquireUseRelease(
+      Effect.tryPromise(() => open(path, "r")),
+      (f) =>
+        Effect.tryPromise(async () => {
+          const buf = Buffer.alloc(st.size);
+          const { bytesRead } = await f.read(buf, 0, st.size, 0);
+          return buf.subarray(0, bytesRead);
+        }),
+      (f) => Effect.promise(() => f.close().catch(() => {})),
+    );
+  }).pipe(Effect.orElseSucceed(() => null));
 }
 
 // The first candidate in dir that is an icon, as a data: URL; null when
-// the project has none.
-export async function findProjectIcon(dir: string): Promise<string | null> {
-  for (const rel of ICON_CANDIDATES) {
-    const ext = extname(rel);
-    const type = TYPES[ext];
-    if (type === undefined) continue;
-    const b = await readIcon(join(dir, rel));
-    if (b !== null && looksLike(ext, b)) return `data:${type};base64,${b.toString("base64")}`;
-  }
-  return null;
+// the project has none. Candidates are read in order, one at a time.
+export function findProjectIconEffect(dir: string): Effect.Effect<string | null> {
+  return Effect.gen(function* () {
+    for (const rel of ICON_CANDIDATES) {
+      const ext = extname(rel);
+      const type = TYPES[ext];
+      if (type === undefined) continue;
+      const b = yield* readIcon(join(dir, rel));
+      if (b !== null && looksLike(ext, b)) return `data:${type};base64,${b.toString("base64")}`;
+    }
+    return null;
+  });
+}
+
+export function findProjectIcon(dir: string): Promise<string | null> {
+  return runPromise(findProjectIconEffect(dir));
 }

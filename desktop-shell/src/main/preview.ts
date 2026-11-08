@@ -1,6 +1,8 @@
 import { connect } from "node:net";
+import { Deferred, Effect } from "effect";
 import type { Session, WebContents, WebContentsView, WebPreferences } from "electron";
 import type { PreviewBounds, PreviewNav, PreviewState } from "../shared/bridge";
+import { listenNow, runPromise } from "../shared/effect";
 
 // The preview pane's page: a dev server on this computer, in a view that
 // main owns and lays over the window. The page gets nothing of the app: a
@@ -13,18 +15,36 @@ export const PREVIEW_PARTITION = "preview";
 const PROBE_MS = 300;
 export const EXTERNAL_GAP_MS = 1000;
 
-// Whether something accepts a TCP connection on host:port within ms.
+// Whether something accepts a TCP connection on host:port within ms. The
+// socket is a resource of the probe: it is destroyed however the probe
+// ends, a timeout included.
+export function listeningEffect(port: number, host: string, ms = PROBE_MS): Effect.Effect<boolean> {
+  return Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const s = connect({ port, host });
+      const answer = listenNow<boolean>((done) => {
+        s.once("connect", () => done(Effect.succeed(true)));
+        s.once("error", () => done(Effect.succeed(false)));
+      });
+      return { s, answer };
+    }),
+    ({ answer }) => Deferred.await(answer).pipe(Effect.timeoutTo({ duration: ms, onTimeout: () => false, onSuccess: (ok) => ok })),
+    ({ s }) => Effect.sync(() => s.destroy()),
+  );
+}
+
 export function listening(port: number, host: string, ms = PROBE_MS): Promise<boolean> {
-  return new Promise((done) => {
-    const s = connect({ port, host });
-    const end = (ok: boolean) => {
-      s.destroy();
-      done(ok);
-    };
-    s.setTimeout(ms, () => end(false));
-    s.once("connect", () => end(true));
-    s.once("error", () => end(false));
-  });
+  return runPromise(listeningEffect(port, host, ms));
+}
+
+// The ports of ports that answer on 127.0.0.1 or [::1] (a dev server that
+// binds "localhost" may take either), all probed at once.
+export function probeEffect(ports: number[]): Effect.Effect<boolean[]> {
+  return Effect.forEach(
+    ports,
+    (p) => Effect.all([listeningEffect(p, "127.0.0.1"), listeningEffect(p, "::1")], { concurrency: 2 }).pipe(Effect.map((up) => up.some(Boolean))),
+    { concurrency: "unbounded" },
+  );
 }
 
 export type Verdict = "load" | "external" | "deny";
@@ -121,9 +141,7 @@ export class Preview {
   // The ports that answer on 127.0.0.1 or [::1]: a dev server that binds
   // "localhost" may take either.
   async probe(ports: number[]): Promise<number[]> {
-    const up = await Promise.all(
-      ports.map(async (p) => (await Promise.all([listening(p, "127.0.0.1"), listening(p, "::1")])).some(Boolean)),
-    );
+    const up = await runPromise(probeEffect(ports));
     ports.forEach((p, i) => (up[i] ? this.open.add(p) : this.open.delete(p)));
     return ports.filter((_, i) => up[i]);
   }

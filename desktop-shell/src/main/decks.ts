@@ -4,6 +4,7 @@ import { delimiter, isAbsolute, join } from "node:path";
 import { createInterface } from "node:readline";
 import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
+import { Data, Deferred, Effect, Exit } from "effect";
 import type {
   AgentCli,
   LocalDeck,
@@ -15,6 +16,7 @@ import type {
   StartError,
   BrowserStateResponse,
 } from "../shared/bridge";
+import { listenNow, RpcError, runFork, runPromise, unrefSleep } from "../shared/effect";
 import type { Browser, BrowserRequest } from "./browser";
 
 // The deck binary on PATH, or null.
@@ -152,18 +154,71 @@ export function dial(Service: DeckClientCtor, sock: string, token: string): Deck
   });
 }
 
-export function unary(client: DeckClient, method: string, request: object, timeoutMs = 120_000): Promise<RpcResult> {
-  return new Promise((resolve) => {
+// One unary call. The gRPC deadline is its timeout (the engine sees it
+// too); interrupting the effect cancels the call.
+export function unaryEffect(client: DeckClient, method: string, request: object, timeoutMs = 120_000): Effect.Effect<unknown, RpcError> {
+  return Effect.async<unknown, RpcError>((resume) => {
     const fn = client[method];
     if (typeof fn !== "function") {
-      resolve({ ok: false, code: grpc.status.UNIMPLEMENTED, message: `no method ${method}` });
+      resume(Effect.fail(new RpcError({ code: grpc.status.UNIMPLEMENTED, message: `no method ${method}` })));
       return;
     }
     const deadline = new Date(Date.now() + timeoutMs);
-    fn.call(client, request, { deadline }, (err: grpc.ServiceError | null, value: unknown) => {
-      if (err !== null) resolve({ ok: false, code: err.code, message: err.details || err.message });
-      else resolve({ ok: true, value });
+    const call = fn.call(client, request, { deadline }, (err: grpc.ServiceError | null, value: unknown) => {
+      resume(err !== null ? Effect.fail(new RpcError({ code: err.code, message: err.details || err.message })) : Effect.succeed(value));
+    }) as { cancel?: () => void } | undefined;
+    return Effect.sync(() => call?.cancel?.());
+  });
+}
+
+// unaryEffect as the bridge's RpcResult: it never rejects.
+export function unary(client: DeckClient, method: string, request: object, timeoutMs = 120_000): Promise<RpcResult> {
+  return runPromise(
+    Effect.match(unaryEffect(client, method, request, timeoutMs), {
+      onFailure: (e): RpcResult => ({ ok: false, code: e.code, message: e.message }),
+      onSuccess: (value): RpcResult => ({ ok: true, value }),
+    }),
+  );
+}
+
+// Why a Deck did not start. Each carries the words the window shows.
+// Refused: nothing was spawned (no engine, no such folder).
+export class StartRefused extends Data.TaggedError("StartRefused")<{ readonly message: string }> {}
+// The process ran but never printed its handshake: it could not run, it
+// exited, or it took longer than START_TIMEOUT_MS.
+export class HandshakeFailed extends Data.TaggedError("HandshakeFailed")<{
+  readonly message: string;
+  readonly reason: "spawn" | "exit" | "timeout";
+}> {}
+// It failed after it was spawned: the failure above, or Info after the
+// handshake, with the end of its stderr for the window.
+export class StartFailed extends Data.TaggedError("StartFailed")<{ readonly message: string; readonly start: StartError }> {}
+
+export type StartFailure = StartRefused | StartFailed;
+
+// Ends a Deck process: it stops when its stdin closes, and SIGTERM is the
+// fallback when it has not exited after graceMs. The fallback timer does
+// not hold the app open.
+export function stopChild(
+  child: Pick<ChildProcess, "stdin" | "kill" | "once" | "off" | "exitCode" | "signalCode">,
+  graceMs = STOP_GRACE_MS,
+): Effect.Effect<void> {
+  return Effect.suspend(() => {
+    const gone = () => child.exitCode !== null || child.signalCode !== null;
+    // Listened to before stdin closes, so a quick exit is not missed.
+    let off = () => {};
+    const exited = listenNow<void>((done) => {
+      const onExit = () => done(Effect.void);
+      child.once("exit", onExit);
+      off = () => child.off("exit", onExit);
     });
+    child.stdin?.end();
+    if (gone()) {
+      off();
+      return Effect.void;
+    }
+    const kill = unrefSleep(graceMs).pipe(Effect.andThen(() => void child.kill("SIGTERM")));
+    return Effect.race(Deferred.await(exited), kill).pipe(Effect.ensuring(Effect.sync(off)));
   });
 }
 
@@ -192,6 +247,8 @@ interface Controller {
   ref: { id: string; generation: string; desktop_capability: string } | null;
   stream: grpc.ClientReadableStream<unknown> | null;
   seen: Set<string>;
+  // The tail of the BrowserUpdate queue: each update runs after the one
+  // before, in the order they were asked for.
   updates: Promise<void>;
 }
 
@@ -199,7 +256,7 @@ type Emit = (id: string, ev: RpcStreamEvent) => void;
 
 // The end of what a Deck wrote to stderr, kept for the life of the process:
 // it says why the Deck stopped.
-interface Tail {
+export interface Tail {
   text: string;
 }
 
@@ -212,18 +269,14 @@ function tailLines(t: Tail): string[] {
     .slice(-TAIL_LINES);
 }
 
-// Waits for the handshake on the child's stdout. It keeps reading after
-// that, so the pipe never fills. Each stderr line goes to onLine.
-function readHandshake(child: ChildProcess, tail: Tail, onLine: (line: string) => void): Promise<Handshake | string> {
-  return new Promise((resolve) => {
-    let done = false;
-    const finish = (v: Handshake | string) => {
-      if (done) return;
-      done = true;
-      clearTimeout(timer);
-      resolve(v);
-    };
-    const timer = setTimeout(() => finish("Deck did not start in time."), START_TIMEOUT_MS);
+// Starts listening to a child that was just spawned, in the same tick, so
+// none of its events is missed (a spawn error comes on process.nextTick):
+// the handshake on stdout, stderr into tail and onLine, its error and its
+// exit. It keeps reading stdout after the handshake, so the pipe never
+// fills. The result is the handshake, or why there is none.
+export function listenForHandshake(child: ChildProcess, tail: Tail, onLine: (line: string) => void): Deferred.Deferred<Handshake, HandshakeFailed> {
+  return listenNow<Handshake, HandshakeFailed>((done) => {
+    const fail = (message: string, reason: HandshakeFailed["reason"]) => done(Effect.fail(new HandshakeFailed({ message, reason })));
     if (child.stderr !== null) {
       child.stderr.on("data", (c: Buffer) => {
         tail.text = (tail.text + c.toString("utf8")).slice(-2000);
@@ -233,17 +286,37 @@ function readHandshake(child: ChildProcess, tail: Tail, onLine: (line: string) =
     if (child.stdout !== null) {
       createInterface({ input: child.stdout }).on("line", (line) => {
         const hs = parseHandshake(line);
-        if (hs !== null) finish(hs);
+        if (hs !== null) done(Effect.succeed(hs));
       });
     }
-    child.on("error", (e) => finish(`Could not run deck: ${e.message}`));
+    child.on("error", (e) => fail(`Could not run deck: ${e.message}`, "spawn"));
     child.on("exit", () => {
       // Deck's own error line, not the usage text cobra prints after it.
       const lines = tail.text.trim().split("\n");
       const last = (lines.find((l) => l.startsWith("Error: "))?.slice("Error: ".length) ?? lines.slice(-2).join(" ")).trim();
-      finish(`Deck stopped before it was ready${last === "" ? "." : `: ${last}`}`);
+      fail(`Deck stopped before it was ready${last === "" ? "." : `: ${last}`}`, "exit");
     });
   });
+}
+
+// Waits for what listenForHandshake heard, for up to timeoutMs.
+export function awaitHandshake(heard: Deferred.Deferred<Handshake, HandshakeFailed>, timeoutMs = START_TIMEOUT_MS): Effect.Effect<Handshake, HandshakeFailed> {
+  return Deferred.await(heard).pipe(
+    Effect.timeoutFail({
+      duration: timeoutMs,
+      onTimeout: () => new HandshakeFailed({ message: "Deck did not start in time.", reason: "timeout" }),
+    }),
+  );
+}
+
+// Both at once, for a child whose events cannot have fired yet.
+export function readHandshake(
+  child: ChildProcess,
+  tail: Tail,
+  onLine: (line: string) => void,
+  timeoutMs = START_TIMEOUT_MS,
+): Effect.Effect<Handshake, HandshakeFailed> {
+  return Effect.suspend(() => awaitHandshake(listenForHandshake(child, tail, onLine), timeoutMs));
 }
 
 // The Decks this app runs on this machine, one `deck serve --rpc` per
@@ -268,11 +341,10 @@ export class RpcDecks {
     if (o === undefined || ref == null) return;
     // Loading/title events can arrive faster than RPC round trips. Serialize
     // them so an older snapshot cannot overwrite a newer takeover state.
-    const update = control!.updates.then(async () => {
-      if (o.browser !== control) return;
-      const out = await unary(o.client, "BrowserUpdate", { controller: ref, state });
-      if (!out.ok) throw new Error(out.message);
-    });
+    const send = Effect.suspend(() =>
+      o.browser !== control ? Effect.void : Effect.asVoid(unaryEffect(o.client, "BrowserUpdate", { controller: ref, state })),
+    );
+    const update = control!.updates.then(() => runPromise(send));
     control!.updates = update.catch(() => {});
     await update;
   }
@@ -301,44 +373,58 @@ export class RpcDecks {
     const control: Controller = { ref: null, stream: null, seen: new Set(), updates: Promise.resolve() };
     o.browser = control;
     const mine = () => this.open_.get(id) === o && o.browser === control;
-    void unary(o.client, "RegisterBrowserController", { desktop_capability: o.browserCapability }).then((out) => {
-      if (!out.ok || !mine()) {
-        if (mine()) o.browser = null;
+    const register = unaryEffect(o.client, "RegisterBrowserController", { desktop_capability: o.browserCapability }).pipe(
+      Effect.match({
+        onFailure: () => {
+          if (mine()) o.browser = null;
+        },
+        onSuccess: (value) => {
+          if (mine()) this.watchBrowser(id, o, control, value as { id: string; generation: string }, mine);
+        },
+      }),
+    );
+    runFork(register);
+  }
+
+  // Runs the requests the engine sends the registered controller c.
+  private watchBrowser(id: string, o: Open, control: Controller, c: { id: string; generation: string }, mine: () => boolean): void {
+    control.ref = { id: c.id, generation: c.generation, desktop_capability: o.browserCapability };
+    const stream = (o.client["Events"] as (r: object) => grpc.ClientReadableStream<unknown>).call(o.client, {
+      browser_controller: control.ref,
+    });
+    control.stream = stream;
+    stream.on("data", (event: { browser_request?: BrowserRequest }) => {
+      const r = event.browser_request;
+      if (!mine() || r === undefined || r.controller_id !== c.id || r.controller_generation !== c.generation) return;
+      if (r.cancelled) {
+        this.browser?.cancel(r.id);
         return;
       }
-      const c = out.value as { id: string; generation: string };
-      control.ref = { id: c.id, generation: c.generation, desktop_capability: o.browserCapability };
-      const stream = (o.client["Events"] as (r: object) => grpc.ClientReadableStream<unknown>).call(o.client, {
-        browser_controller: control.ref,
-      });
-      control.stream = stream;
-      stream.on("data", (event: { browser_request?: BrowserRequest }) => {
-        const r = event.browser_request;
-        if (!mine() || r === undefined || r.controller_id !== c.id || r.controller_generation !== c.generation) return;
-        if (r.cancelled) {
-          this.browser?.cancel(r.id);
-          return;
-        }
-        if (control.seen.has(r.id)) return;
-        control.seen.add(r.id);
-        void this.browser!.execute(id, r)
-          .then(async (response) => {
-            if (!mine()) return;
-            // Publish the full state before resolving open/close, including the
-            // empty final-tab update. BrowserState is immediately consistent.
-            await this.browserUpdate(id, this.browser!.state(id, r.session_id));
-            if (mine()) await unary(o.client, "BrowserResult", { controller: control.ref, id: r.id, response });
-          })
-          .catch(() => {
-            this.stopBrowser(id, o);
-          });
-      });
-      const ended = () => {
-        if (mine()) this.stopBrowser(id, o);
-      };
-      stream.on("error", ended);
-      stream.on("end", ended);
+      if (control.seen.has(r.id)) return;
+      control.seen.add(r.id);
+      runFork(this.runBrowserRequest(id, o, control, r, mine));
     });
+    const ended = () => {
+      if (mine()) this.stopBrowser(id, o);
+    };
+    stream.on("error", ended);
+    stream.on("end", ended);
+  }
+
+  // One browser request: run it, publish the tabs, answer the engine. A
+  // failure along the way ends the controller.
+  private runBrowserRequest(id: string, o: Open, control: Controller, r: BrowserRequest, mine: () => boolean): Effect.Effect<void> {
+    const browser = this.browser!;
+    const self = this;
+    return Effect.gen(function* () {
+      const response = yield* Effect.tryPromise(() => browser.execute(id, r));
+      if (!mine()) return;
+      // Publish the full state before resolving open/close, including the
+      // empty final-tab update. BrowserState is immediately consistent.
+      yield* Effect.tryPromise(() => self.browserUpdate(id, browser.state(id, r.session_id)));
+      // The engine's answer to a result is not waited on for anything.
+      if (mine()) yield* Effect.ignore(unaryEffect(o.client, "BrowserResult", { controller: control.ref, id: r.id, response }));
+    }).pipe(Effect.catchAll(() => Effect.sync(() => this.stopBrowser(id, o))));
   }
 
   private stopBrowser(id: string, o: Open): void {
@@ -346,7 +432,7 @@ export class RpcDecks {
     o.browser = null;
     c?.stream?.cancel();
     this.browser?.closeDeck(id);
-    if (c?.ref != null) void unary(o.client, "UnregisterBrowserController", c.ref, 5000);
+    if (c?.ref != null) runFork(Effect.ignore(unaryEffect(o.client, "UnregisterBrowserController", c.ref, 5000)));
   }
   private readonly open_ = new Map<string, Open>();
   // Decks whose process ended by itself, until restart() or close().
@@ -399,44 +485,72 @@ export class RpcDecks {
     return p;
   }
 
-  private async start(dir: string, id: string): Promise<Started | { ok: false; message: string; start?: StartError }> {
-    if (this.deck === null) return { ok: false, message: "This install of Deck is missing its engine. Reinstall Deck." };
-    try {
-      if (!statSync(dir).isDirectory()) return { ok: false, message: "That is not a folder." };
-    } catch {
-      return { ok: false, message: "That folder does not exist." };
-    }
-    const env = this.path === null ? process.env : { ...process.env, PATH: await this.path };
-    const child = spawn(this.deck, ["serve", "--rpc"], {
-      cwd: dir,
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-      windowsHide: true,
-    });
-    const tail: Tail = { text: "" };
-    const hs = await readHandshake(child, tail, (line) => this.log("info", `deck (${dir}): ${line}`));
-    if (typeof hs === "string") {
-      this.log("error", `deck (${dir}) did not start: ${hs}`);
-      child.kill("SIGTERM");
-      return { ok: false, message: hs, start: { lines: tailLines(tail), noAgents: noAgentCli(tail.text) } };
-    }
-    const client = dial(this.Service, hs.sock, hs.token);
-    const info = await unary(client, "Info", {}, 15_000);
-    if (!info.ok) {
-      this.log("error", `deck (${dir}) did not answer: ${info.message}`);
-      client.close();
-      child.stdin?.end();
-      return { ok: false, message: `Deck did not answer: ${info.message}`, start: { lines: tailLines(tail), noAgents: false } };
-    }
-    this.log("info", `deck ${hs.version} started in ${dir}`);
-    const project = (info.value as { project?: unknown }).project;
-    const deck: LocalDeck = {
-      id,
-      dir,
-      project: typeof project === "string" && project !== "" ? project : dir,
-      version: hs.version,
-    };
-    return { ok: true, deck, child, client, tail, browserCapability: hs.browser_capability ?? "" };
+  private start(dir: string, id: string): Promise<Started | { ok: false; message: string; start?: StartError }> {
+    return runPromise(
+      Effect.match(this.startEffect(dir, id), {
+        onFailure: (e) => (e._tag === "StartFailed" ? { ok: false as const, message: e.message, start: e.start } : { ok: false as const, message: e.message }),
+        onSuccess: (started) => started,
+      }),
+    );
+  }
+
+  // Spawns `deck serve --rpc` in dir, reads its handshake and asks it for
+  // Info. The process and the client are resources of this effect's scope:
+  // if a step fails (or the effect is interrupted) they are let go; on
+  // success they are handed to keep().
+  private startEffect(dir: string, id: string): Effect.Effect<Started, StartFailure> {
+    const self = this;
+    const deckBin = this.deck;
+    return Effect.scoped(
+      Effect.gen(function* () {
+        if (deckBin === null) return yield* new StartRefused({ message: "This install of Deck is missing its engine. Reinstall Deck." });
+        const isDir = yield* Effect.try({
+          try: () => statSync(dir).isDirectory(),
+          catch: () => new StartRefused({ message: "That folder does not exist." }),
+        });
+        if (!isDir) return yield* new StartRefused({ message: "That is not a folder." });
+        const path = self.path;
+        const env = path === null ? process.env : { ...process.env, PATH: yield* Effect.promise(() => path) };
+        const tail: Tail = { text: "" };
+        // Let go of on failure only: Deck stops when its stdin closes. Its
+        // events are listened to as it is spawned.
+        const { child, heard } = yield* Effect.acquireRelease(
+          Effect.sync(() => {
+            const child = spawn(deckBin, ["serve", "--rpc"], { cwd: dir, env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+            return { child, heard: listenForHandshake(child, tail, (line) => self.log("info", `deck (${dir}): ${line}`)) };
+          }),
+          ({ child: c }, exit) => (Exit.isFailure(exit) ? Effect.sync(() => c.stdin?.end()) : Effect.void),
+        );
+        const hs = yield* awaitHandshake(heard).pipe(
+          Effect.tapError((e) =>
+            Effect.sync(() => {
+              self.log("error", `deck (${dir}) did not start: ${e.message}`);
+              child.kill("SIGTERM");
+            }),
+          ),
+          Effect.mapError((e) => new StartFailed({ message: e.message, start: { lines: tailLines(tail), noAgents: noAgentCli(tail.text) } })),
+        );
+        const client = yield* Effect.acquireRelease(
+          Effect.sync(() => dial(self.Service, hs.sock, hs.token)),
+          (c, exit) => (Exit.isFailure(exit) ? Effect.sync(() => c.close()) : Effect.void),
+        );
+        const info = yield* unaryEffect(client, "Info", {}, 15_000).pipe(
+          Effect.tapError((e) => Effect.sync(() => self.log("error", `deck (${dir}) did not answer: ${e.message}`))),
+          Effect.mapError(
+            (e) => new StartFailed({ message: `Deck did not answer: ${e.message}`, start: { lines: tailLines(tail), noAgents: false } }),
+          ),
+        );
+        self.log("info", `deck ${hs.version} started in ${dir}`);
+        const project = (info as { project?: unknown }).project;
+        const deck: LocalDeck = {
+          id,
+          dir,
+          project: typeof project === "string" && project !== "" ? project : dir,
+          version: hs.version,
+        };
+        return { ok: true as const, deck, child, client, tail, browserCapability: hs.browser_capability ?? "" };
+      }),
+    );
   }
 
   // Keeps a started Deck. When its process ends by itself, the window gets
@@ -557,11 +671,7 @@ export class RpcDecks {
     const o = this.open_.get(id);
     if (o === undefined) return;
     this.drop(id);
-    // Deck stops when its stdin closes; a kill is the fallback.
-    o.child.stdin?.end();
-    const kill = setTimeout(() => o.child.kill("SIGTERM"), STOP_GRACE_MS);
-    kill.unref();
-    o.child.once("exit", () => clearTimeout(kill));
+    runFork(stopChild(o.child));
   }
 
   closeAll(): void {

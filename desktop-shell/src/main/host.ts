@@ -1,3 +1,4 @@
+import { Data, Effect } from "effect";
 import {
   type AgentCli,
   type BrowserViewInput,
@@ -21,11 +22,12 @@ import {
   ARCHIVE_OFFERS,
   type ThreadMenuInput,
 } from "../shared/bridge";
+import { runPromise } from "../shared/effect";
 import { isAppIcon } from "./appIcon";
 import { findProjectIcon } from "./projectIcon";
 import type { RpcDecks } from "./decks";
 import type { LinkHost } from "./link";
-import { codeError, type Connect, pairWith } from "./pair";
+import { codeError, type Connect, PairFailed, pairEffect } from "./pair";
 import { connectPinned, normalizeFingerprint, targetError } from "./pin";
 import type { PhoneService } from "./phone";
 import type { Preview } from "./preview";
@@ -75,29 +77,34 @@ export function createHost(d: HostDeps): DeckHost {
   const icons = new Map<string, Promise<string | null>>();
   return {
     listServers: async () => d.store.list(),
-    pair: async (input: PairInput) => {
-      const fingerprint = input.fingerprint === null ? null : normalizeFingerprint(input.fingerprint);
-      if (input.fingerprint !== null && fingerprint === null) {
-        return { ok: false, message: "The fingerprint is not a SHA-256 fingerprint.", retryAfterMs: null };
-      }
-      const t = { host: input.host, port: input.port, tls: input.tls, fingerprint };
-      const bad = targetError(t) ?? codeError(input.code);
-      if (bad !== null) return { ok: false, message: bad, retryAfterMs: null };
-      const r = await pairWith(t, input.code, d.deviceName, connect);
-      if (!r.ok) return r;
-      const server = d.store.save(
-        {
-          id: r.paired.serverId,
-          host: t.host,
-          port: t.port,
-          tls: t.tls,
-          fingerprint: t.fingerprint,
-          deviceId: r.paired.deviceId,
-          expiresAt: r.paired.expiresAt,
-        },
-        r.paired.token,
+    // Checks the target and the code before it connects; keeps the server
+    // once Deck paired this app.
+    pair: (input: PairInput) => {
+      const refuse = (message: string) => new PairFailed({ message, retryAfterMs: null });
+      const pairing = Effect.gen(function* () {
+        const fingerprint = input.fingerprint === null ? null : normalizeFingerprint(input.fingerprint);
+        if (input.fingerprint !== null && fingerprint === null) return yield* refuse("The fingerprint is not a SHA-256 fingerprint.");
+        const t = { host: input.host, port: input.port, tls: input.tls, fingerprint };
+        const bad = targetError(t) ?? codeError(input.code);
+        if (bad !== null) return yield* refuse(bad);
+        const paired = yield* pairEffect(t, input.code, d.deviceName, connect);
+        const server = d.store.save(
+          {
+            id: paired.serverId,
+            host: t.host,
+            port: t.port,
+            tls: t.tls,
+            fingerprint: t.fingerprint,
+            deviceId: paired.deviceId,
+            expiresAt: paired.expiresAt,
+          },
+          paired.token,
+        );
+        return { ok: true as const, server };
+      });
+      return runPromise(
+        pairing.pipe(Effect.catchTag("PairFailed", (e) => Effect.succeed({ ok: false as const, message: e.message, retryAfterMs: e.retryAfterMs }))),
       );
-      return { ok: true, server };
     },
     forgetServer: async (id: string) => d.store.remove(id),
     findDeck: async () => d.deckPath,
@@ -284,13 +291,18 @@ const ARGS: Record<HostMethod, Check[]> = {
   projectIcon: [isStr],
 };
 
-// Calls method m with args from the renderer, or rejects when they are not
-// the types the method takes.
+// Arguments from the renderer that are not the types the method takes.
+export class BadArguments extends Data.TaggedError("BadArguments")<{ readonly message: string }> {}
+
+// Calls method m with args from the renderer, or rejects with BadArguments
+// when they are not the types the method takes. The method's own failure
+// rejects as it is.
 export function callHost(host: DeckHost, m: HostMethod, args: unknown[]): Promise<unknown> {
   const checks = ARGS[m];
-  if (args.length !== checks.length || !checks.every((c, i) => c(args[i]))) {
-    return Promise.reject(new Error(`bad arguments for ${m}`));
-  }
-  const fn = host[m] as (...a: unknown[]) => Promise<unknown>;
-  return fn(...args);
+  const call = Effect.suspend(() => {
+    if (args.length !== checks.length || !checks.every((c, i) => c(args[i]))) return Effect.fail(new BadArguments({ message: `bad arguments for ${m}` }));
+    const fn = host[m] as (...a: unknown[]) => Promise<unknown>;
+    return Effect.tryPromise({ try: () => fn(...args), catch: (e) => e });
+  });
+  return runPromise(call);
 }

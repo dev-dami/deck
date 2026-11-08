@@ -1,4 +1,7 @@
+import { Effect, type Fiber } from "effect";
 import type { DeckBridge, RpcMethod, TermEvent } from "../shared/bridge";
+import { type BridgeError, GRPC, interrupt, type RpcError, runFork, runPromise } from "../shared/effect";
+import { rpcEffect } from "./rpcEffect";
 import { type Board, type Crew, type SharedMirror, type Team, toBoard, toCrew, toMirror, toTeam } from "./crew";
 import { bool, list, num, type Obj, obj, str } from "./guards";
 import { type LimitCheck, type Limits, toCheck, toLimits } from "./limits";
@@ -304,7 +307,9 @@ export function base64Bytes(b64: string): Uint8Array {
 export type TermListener = (ev: TermEvent) => void;
 
 // The gRPC status of a stream that fell behind.
-const RESOURCE_EXHAUSTED = 8;
+const RESOURCE_EXHAUSTED = GRPC.RESOURCE_EXHAUSTED;
+// How long a terminal stream that fell behind waits to come back.
+const RESUB_MS = 200;
 
 // The project calls of one local Deck. Failures come back as their message
 // so the caller can show it where it happened.
@@ -329,13 +334,19 @@ export class ProjectApi {
     this.listeners.clear();
   }
 
-  private async call(method: RpcMethod, request: Record<string, unknown>): Promise<{ ok: true; value: unknown } | { ok: false; message: string }> {
-    try {
-      const r = await this.bridge.rpcCall(this.deckId, method, request);
-      return r.ok ? r : { ok: false, message: r.message || `Deck refused ${method}.` };
-    } catch (e) {
-      return { ok: false, message: e instanceof Error ? e.message : String(e) };
-    }
+  // One call as an Effect, for composing several.
+  rpc(method: RpcMethod, request: Record<string, unknown>): Effect.Effect<unknown, RpcError | BridgeError> {
+    return rpcEffect(this.bridge, this.deckId, method, request);
+  }
+
+  // One call; a failure comes back as its message.
+  private call(method: RpcMethod, request: Record<string, unknown>): Promise<{ ok: true; value: unknown } | { ok: false; message: string }> {
+    return runPromise(
+      Effect.match(this.rpc(method, request), {
+        onFailure: (e) => ({ ok: false as const, message: e._tag === "RpcError" ? e.message || `Deck refused ${method}.` : e.message }),
+        onSuccess: (value) => ({ ok: true as const, value }),
+      }),
+    );
   }
 
   // The work tree, or the error.
@@ -535,17 +546,18 @@ export class ProjectApi {
       this.listeners.set(id, set);
     }
     set.add(fn);
-    let retry: ReturnType<typeof setTimeout> | null = null;
+    let retry: Fiber.RuntimeFiber<void, unknown> | null = null;
     const resub: TermListener = (ev) => {
       // Only a stream that fell behind comes back; a closed one stays closed.
       if (ev.type === "term-end" && ev.code === RESOURCE_EXHAUSTED) {
-        retry = setTimeout(() => void this.bridge.termSubscribe(this.deckId, id), 200);
+        interrupt(retry);
+        retry = runFork(Effect.sleep(RESUB_MS).pipe(Effect.andThen(Effect.promise(() => this.bridge.termSubscribe(this.deckId, id))), Effect.ignore));
       }
     };
     set.add(resub);
     void this.bridge.termSubscribe(this.deckId, id);
     return () => {
-      if (retry !== null) clearTimeout(retry);
+      interrupt(retry);
       set.delete(fn);
       set.delete(resub);
       void this.bridge.termUnsubscribe(this.deckId, id);
