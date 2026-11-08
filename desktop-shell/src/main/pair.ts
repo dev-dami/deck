@@ -1,5 +1,7 @@
 import http from "node:http";
 import type net from "node:net";
+import { Data, Deferred, Effect } from "effect";
+import { listenNow, runPromise } from "../shared/effect";
 import { authority, connectPinned, originOf, PinError, type Target } from "./pin";
 
 export interface Paired {
@@ -17,6 +19,13 @@ export type Connect = (t: Target) => Promise<net.Socket>;
 
 const MAX_BODY = 8 * 1024;
 const MAX_CODE_LEN = 64;
+const ANSWER_MS = 15_000;
+
+// Why pairing did not work, in the words the window shows. retryAfterMs is
+// the wait Deck asked for after too many tries.
+export class PairFailed extends Data.TaggedError("PairFailed")<{ readonly message: string; readonly retryAfterMs: number | null }> {}
+
+const failed = (message: string, retryAfterMs: number | null = null) => new PairFailed({ message, retryAfterMs });
 
 const ERRORS: Record<string, string> = {
   unauthorized: "The code is wrong or has expired. Run 'deck remote pair' for a new one.",
@@ -65,76 +74,98 @@ function connectError(e: unknown, t: Target): string {
   return `Could not reach Deck at ${authority(t)}.`;
 }
 
+// The pair route's answer: its status, Retry-After and the JSON body (null
+// when it is not JSON, or longer than MAX_BODY).
+interface Answer {
+  status: number;
+  retryAfter: string;
+  body: unknown;
+}
+
+// Sends body on sock and reads the answer, for up to ANSWER_MS. The request
+// is destroyed if the effect is interrupted (its timeout does).
+function post(sock: net.Socket, t: Target, body: string): Effect.Effect<Answer, PairFailed> {
+  const noAnswer = () => failed(`Deck at ${authority(t)} did not answer.`);
+  return Effect.suspend(() => {
+    let req: http.ClientRequest | undefined;
+    const answered = listenNow<Answer, PairFailed>((done) => {
+      const r = http.request(
+        {
+          createConnection: () => sock,
+          method: "POST",
+          path: "/api/v1/pair",
+          headers: {
+            host: authority(t),
+            origin: originOf(t),
+            "content-type": "application/json",
+            "content-length": Buffer.byteLength(body),
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          let size = 0;
+          res.on("data", (c: Buffer) => {
+            size += c.length;
+            if (size > MAX_BODY) {
+              r.destroy();
+              return;
+            }
+            chunks.push(c);
+          });
+          res.on("end", () => {
+            let parsed: unknown = null;
+            try {
+              parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+            } catch {
+              parsed = null;
+            }
+            done(Effect.succeed({ status: res.statusCode ?? 0, retryAfter: String(res.headers["retry-after"] ?? ""), body: parsed }));
+          });
+        },
+      );
+      r.on("error", () => done(Effect.fail(noAnswer())));
+      r.end(body);
+      req = r;
+    });
+    return Deferred.await(answered).pipe(
+      Effect.onInterrupt(() => Effect.sync(() => req?.destroy())),
+      Effect.timeoutFail({ duration: ANSWER_MS, onTimeout: noAnswer }),
+    );
+  });
+}
+
+// What an answer means: the pairing, or why not.
+function decodeAnswer(a: Answer): Effect.Effect<Paired, PairFailed> {
+  if (a.status === 200) {
+    const paired = decodePaired(a.body);
+    return paired === null ? Effect.fail(failed("Deck sent an unexpected answer.")) : Effect.succeed(paired);
+  }
+  const err = typeof a.body === "object" && a.body !== null ? (a.body as Record<string, unknown>)["error"] : undefined;
+  const retry = Number.parseInt(a.retryAfter, 10);
+  return Effect.fail(
+    failed(
+      (typeof err === "string" ? ERRORS[err] : undefined) ?? `Pairing failed (HTTP ${a.status}).`,
+      a.status === 429 && Number.isFinite(retry) ? retry * 1000 : null,
+    ),
+  );
+}
+
 // POST /api/v1/pair with the code (§3.5). The request goes out only on a
 // connection whose certificate matched the pin, with the Origin and content
 // type Deck requires (R7).
-export async function pairWith(
-  t: Target,
-  code: string,
-  deviceName: string,
-  connect: Connect = connectPinned,
-): Promise<PairResult> {
-  let sock: net.Socket;
-  try {
-    sock = await connect(t);
-  } catch (e) {
-    return failure(connectError(e, t));
-  }
-  const body = JSON.stringify({ code: code.trim(), device_name: deviceName });
-  return new Promise<PairResult>((resolve) => {
-    const req = http.request(
-      {
-        createConnection: () => sock,
-        method: "POST",
-        path: "/api/v1/pair",
-        headers: {
-          host: authority(t),
-          origin: originOf(t),
-          "content-type": "application/json",
-          "content-length": Buffer.byteLength(body),
-        },
-        timeout: 15_000,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        res.on("data", (c: Buffer) => {
-          size += c.length;
-          if (size > MAX_BODY) {
-            req.destroy();
-            return;
-          }
-          chunks.push(c);
-        });
-        res.on("end", () => {
-          let parsed: unknown = null;
-          try {
-            parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-          } catch {
-            parsed = null;
-          }
-          const status = res.statusCode ?? 0;
-          if (status === 200) {
-            const paired = decodePaired(parsed);
-            resolve(paired === null ? failure("Deck sent an unexpected answer.") : { ok: true, paired });
-            return;
-          }
-          const err =
-            typeof parsed === "object" && parsed !== null
-              ? (parsed as Record<string, unknown>)["error"]
-              : undefined;
-          const retry = Number.parseInt(String(res.headers["retry-after"] ?? ""), 10);
-          resolve(
-            failure(
-              (typeof err === "string" ? ERRORS[err] : undefined) ?? `Pairing failed (HTTP ${status}).`,
-              status === 429 && Number.isFinite(retry) ? retry * 1000 : null,
-            ),
-          );
-        });
-      },
-    );
-    req.on("timeout", () => req.destroy(new Error("timeout")));
-    req.on("error", () => resolve(failure(`Deck at ${authority(t)} did not answer.`)));
-    req.end(body);
+export function pairEffect(t: Target, code: string, deviceName: string, connect: Connect = connectPinned): Effect.Effect<Paired, PairFailed> {
+  return Effect.gen(function* () {
+    const sock = yield* Effect.tryPromise({ try: () => connect(t), catch: (e) => failed(connectError(e, t)) });
+    const answer = yield* post(sock, t, JSON.stringify({ code: code.trim(), device_name: deviceName }));
+    return yield* decodeAnswer(answer);
   });
+}
+
+export function pairWith(t: Target, code: string, deviceName: string, connect: Connect = connectPinned): Promise<PairResult> {
+  return runPromise(
+    Effect.match(pairEffect(t, code, deviceName, connect), {
+      onFailure: (e): PairResult => failure(e.message, e.retryAfterMs),
+      onSuccess: (paired): PairResult => ({ ok: true, paired }),
+    }),
+  );
 }

@@ -253,7 +253,7 @@
    separatorColor, controlAccentColor and the system greens, oranges and
    reds); the agents take system hues too. It sets Tabletop's names, so
    every component reads it without a map. */
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"], [data-palette="aurora"], [data-palette="dune"], [data-palette="nebula"])[data-mode] {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "SFMono-Regular", "Geist Mono", Menlo, Consolas, monospace;
   /* SF has a real semibold; headings and the selected row use it. */
@@ -317,7 +317,7 @@
   --kind-antigravity: var(--agent-antigravity) !important;
   --kind-pi: var(--agent-pi) !important;
 }
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode="light"] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"], [data-palette="aurora"], [data-palette="dune"], [data-palette="nebula"])[data-mode="light"] {
   --canvas: #ffffff;
   --sidebar: #efeff1;
   --surface-1: #ffffff;
@@ -483,6 +483,227 @@
   --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.28);
 }
 
+/* Horizon, the default theme (docs/design-glass.md, section 10): near-black
+   planes, quiet greys and one soft blue, taken from the picture behind
+   them. Apple's semantic colours (the blocks above name it), its own
+   surfaces. */
+:root[data-palette="horizon"][data-mode] {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 600;
+  --radius: 10px;
+  --control-radius: 7px;
+  --chat-max: 46rem;
+  --backdrop: #0b0b0d;
+  --canvas: #111113;
+  --sidebar: #141415;
+  --surface-1: #1a1a1d;
+  --surface-2: #212125;
+  --code: #0e0e10;
+  --bubble: #25252a;
+  --hairline: rgb(255 255 255 / 0.075);
+  --hairline-strong: rgb(255 255 255 / 0.13);
+  --hover: rgb(255 255 255 / 0.05);
+  --selected: rgb(255 255 255 / 0.085);
+  --segment: rgb(255 255 255 / 0.12);
+  --highlight: rgb(255 255 255 / 0.05);
+  --text: #e6e6e8;
+  --text-muted: #a3a3a9;
+  --text-faint: #7f7f86;
+  --signal: #5b8def;
+  --signal-foreground: #fff;
+  --link: #7ea7f5;
+  --info-foreground: #7ea7f5;
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 50px -12px rgb(0 0 0 / 0.75);
+}
+:root[data-palette="horizon"][data-mode="light"] {
+  --backdrop: #e7e7ea;
+  --canvas: #f8f8f9;
+  --sidebar: #f1f1f3;
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --code: #f2f2f4;
+  --bubble: #ebebef;
+  --hairline: rgb(0 0 0 / 0.08);
+  --hairline-strong: rgb(0 0 0 / 0.14);
+  --hover: rgb(0 0 0 / 0.045);
+  --selected: rgb(0 0 0 / 0.075);
+  --segment: #ffffff;
+  --highlight: transparent;
+  --text: #1b1b1d;
+  --text-muted: #5f5f66;
+  --text-faint: #75757d;
+  --signal: #2f6fdb;
+  --signal-foreground: #fff;
+  --link: #2563c9;
+  --info-foreground: #2563c9;
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.26);
+}
+
+/* Aurora: Horizon's window over green and violet light, a green accent. */
+:root[data-palette="aurora"][data-mode] {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 600;
+  --radius: 10px;
+  --control-radius: 7px;
+  --chat-max: 46rem;
+  --hairline: rgb(255 255 255 / 0.075);
+  --hairline-strong: rgb(255 255 255 / 0.13);
+  --hover: rgb(255 255 255 / 0.05);
+  --selected: rgb(255 255 255 / 0.085);
+  --segment: rgb(255 255 255 / 0.12);
+  --highlight: rgb(255 255 255 / 0.05);
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 50px -12px rgb(0 0 0 / 0.75);
+  --backdrop: #0a0d0c;
+  --canvas: #0f1211;
+  --sidebar: #131716;
+  --surface-1: #191f1d;
+  --surface-2: #202725;
+  --code: #0c0f0e;
+  --bubble: #1f2a26;
+  --text: #e4ebe8;
+  --text-muted: #9fb0aa;
+  --text-faint: #7a8a85;
+  --signal: #3ecf8e;
+  --signal-foreground: #04140d;
+  --link: #6ee0ad;
+  --info-foreground: #6ee0ad;
+}
+:root[data-palette="aurora"][data-mode="light"] {
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --hairline: rgb(0 0 0 / 0.08);
+  --hairline-strong: rgb(0 0 0 / 0.14);
+  --hover: rgb(0 0 0 / 0.045);
+  --selected: rgb(0 0 0 / 0.075);
+  --segment: #ffffff;
+  --highlight: transparent;
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.26);
+  --backdrop: #e6ece9;
+  --canvas: #f6f8f7;
+  --sidebar: #eef2f0;
+  --code: #eff3f1;
+  --bubble: #e3eee9;
+  --text: #18201d;
+  --text-muted: #5a6b65;
+  --text-faint: #71827c;
+  --signal: #13955f;
+  --signal-foreground: #fff;
+  --link: #0f7a4e;
+  --info-foreground: #0f7a4e;
+}
+/* Dune: the window over desert ridges at dusk, an amber accent. */
+:root[data-palette="dune"][data-mode] {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 600;
+  --radius: 10px;
+  --control-radius: 7px;
+  --chat-max: 46rem;
+  --hairline: rgb(255 255 255 / 0.075);
+  --hairline-strong: rgb(255 255 255 / 0.13);
+  --hover: rgb(255 255 255 / 0.05);
+  --selected: rgb(255 255 255 / 0.085);
+  --segment: rgb(255 255 255 / 0.12);
+  --highlight: rgb(255 255 255 / 0.05);
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 50px -12px rgb(0 0 0 / 0.75);
+  --backdrop: #0d0a09;
+  --canvas: #13100f;
+  --sidebar: #181413;
+  --surface-1: #211b19;
+  --surface-2: #28211e;
+  --code: #100d0c;
+  --bubble: #2d221d;
+  --text: #efe6df;
+  --text-muted: #b3a59b;
+  --text-faint: #8a7d74;
+  --signal: #f59e4b;
+  --signal-foreground: #1a0f05;
+  --link: #f7b678;
+  --info-foreground: #f7b678;
+}
+:root[data-palette="dune"][data-mode="light"] {
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --hairline: rgb(0 0 0 / 0.08);
+  --hairline-strong: rgb(0 0 0 / 0.14);
+  --hover: rgb(0 0 0 / 0.045);
+  --selected: rgb(0 0 0 / 0.075);
+  --segment: #ffffff;
+  --highlight: transparent;
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.26);
+  --backdrop: #ede5dd;
+  --canvas: #faf6f2;
+  --sidebar: #f3ece5;
+  --code: #f5efe9;
+  --bubble: #f1e5da;
+  --text: #2a201b;
+  --text-muted: #6d5f55;
+  --text-faint: #86776c;
+  --signal: #c7681c;
+  --signal-foreground: #fff;
+  --link: #a95514;
+  --info-foreground: #a95514;
+}
+/* Nebula: the window over a cloud of lit gas, a violet accent. */
+:root[data-palette="nebula"][data-mode] {
+  --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --font-weight-semibold: 500;
+  --font-weight-bold: 600;
+  --radius: 10px;
+  --control-radius: 7px;
+  --chat-max: 46rem;
+  --hairline: rgb(255 255 255 / 0.075);
+  --hairline-strong: rgb(255 255 255 / 0.13);
+  --hover: rgb(255 255 255 / 0.05);
+  --selected: rgb(255 255 255 / 0.085);
+  --segment: rgb(255 255 255 / 0.12);
+  --highlight: rgb(255 255 255 / 0.05);
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.6), 0 22px 50px -12px rgb(0 0 0 / 0.75);
+  --backdrop: #0a0910;
+  --canvas: #0f0e14;
+  --sidebar: #14131a;
+  --surface-1: #1b1a23;
+  --surface-2: #22202b;
+  --code: #0d0c12;
+  --bubble: #26213a;
+  --text: #e8e6f0;
+  --text-muted: #a8a3b8;
+  --text-faint: #807b91;
+  --signal: #a78bfa;
+  --signal-foreground: #120a24;
+  --link: #c0abfc;
+  --info-foreground: #c0abfc;
+}
+:root[data-palette="nebula"][data-mode="light"] {
+  --surface-1: #ffffff;
+  --surface-2: #ffffff;
+  --hairline: rgb(0 0 0 / 0.08);
+  --hairline-strong: rgb(0 0 0 / 0.14);
+  --hover: rgb(0 0 0 / 0.045);
+  --selected: rgb(0 0 0 / 0.075);
+  --segment: #ffffff;
+  --highlight: transparent;
+  --elevation-popover: 0 0 0 0.5px rgb(0 0 0 / 0.1), 0 22px 50px -14px rgb(0 0 0 / 0.26);
+  --backdrop: #e9e7f1;
+  --canvas: #f8f7fb;
+  --sidebar: #f0eef6;
+  --code: #f2f0f7;
+  --bubble: #ebe6f8;
+  --text: #1f1c2a;
+  --text-muted: #625d74;
+  --text-faint: #7a748c;
+  --signal: #6d4fd8;
+  --signal-foreground: #fff;
+  --link: #5a3dc4;
+  --info-foreground: #5a3dc4;
+}
+
 /* The materials, as utilities. They write Tailwind's shadow variables, so
    a focus ring or a shadow-* utility on the same element still adds up. */
 @utility liquid {
@@ -493,7 +714,7 @@
   border-color: transparent;
   outline: var(--material-edge);
   outline-offset: var(--material-edge-offset);
-  --tw-inset-shadow: inset 0 1px 0 0 var(--glass-spec);
+  --tw-inset-shadow: var(--glass-inset, inset 0 1px 0 0 var(--glass-spec));
   --tw-inset-ring-shadow: inset 0 0 0 1px var(--glass-rim);
   --tw-shadow: var(--glass-shadow);
   box-shadow:
@@ -563,7 +784,7 @@ body {
    gives way to a plain fill under it. The art shows behind the glass
    chrome and in the gutters between the panels; the room's sheet stays
    opaque over it. The first screens (Welcome, Connect) print the picture
-   as a print on the page instead (ui/ArtFigure.tsx), on a plain ground. */
+   themselves (ui/ArtFigure.tsx), full bleed behind their glass. */
 :root[data-backdrop] body,
 :root[data-backdrop][data-vibrancy] body {
   background: var(--backdrop);
@@ -598,6 +819,11 @@ body:has(.shell) .backdrop {
 }
 body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   visibility: hidden;
+}
+/* With the threads in a bar across the top there is no column: the
+   picture shows behind the bar's glass (--topbar-h, ui/ThreadBar.tsx). */
+:root[data-sidebar="top"] body:has(.shell) .backdrop {
+  clip-path: inset(var(--gutter) var(--gutter) calc(100% - var(--gutter) - var(--topbar-h)) var(--gutter) round var(--panel-radius));
 }
 /* A print shows its ground until it has drawn. */
 .art-print {
@@ -1100,12 +1326,12 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 
 /* The sidebar's brand strip. Tabletop has no glow; the other themes keep
    T3 Code's blue one behind the wordmark. */
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]) .brand-glow {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"]):not([data-palette="aurora"]):not([data-palette="dune"]):not([data-palette="nebula"]) .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 38%) 0%, rgb(37 99 235 / 14%) 45%, transparent 75%),
     linear-gradient(180deg, rgb(59 130 246 / 10%), transparent);
 }
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"])[data-mode="light"] .brand-glow {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"]):not([data-palette="aurora"]):not([data-palette="dune"]):not([data-palette="nebula"])[data-mode="light"] .brand-glow {
   background:
     radial-gradient(120% 140% at 10% 0%, rgb(59 130 246 / 22%) 0%, rgb(37 99 235 / 8%) 45%, transparent 75%);
 }
@@ -1264,7 +1490,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 
 /* Every other theme defines the old names; Tabletop's names follow them. */
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]) {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"]):not([data-palette="aurora"]):not([data-palette="dune"]):not([data-palette="nebula"]) {
   --canvas: var(--background);
   --surface-1: var(--card);
   --surface-2: var(--popover);
@@ -1282,7 +1508,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --link: var(--primary);
   --info-foreground: var(--primary);
 }
-:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"])[data-mode="light"] {
+:root[data-palette]:not([data-palette="tabletop"]):not([data-palette="apple"]):not([data-palette="glass"]):not([data-palette="horizon"]):not([data-palette="aurora"]):not([data-palette="dune"]):not([data-palette="nebula"])[data-mode="light"] {
   --highlight: transparent;
 }
 
@@ -1688,7 +1914,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --syn-attr: #e50000;
   --syn-operator: #000000;
 }
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"], [data-palette="aurora"], [data-palette="dune"], [data-palette="nebula"])[data-mode] {
   /* After Xcode's Default (Dark) and Default (Light). */
   --syn-keyword: #ff7ab2;
   --syn-string: #ff8170;
@@ -1702,7 +1928,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --syn-attr: #6bdfff;
   --syn-operator: #c9c9cc;
 }
-:root:is([data-palette="apple"], [data-palette="glass"])[data-mode="light"] {
+:root:is([data-palette="apple"], [data-palette="glass"], [data-palette="horizon"], [data-palette="aurora"], [data-palette="dune"], [data-palette="nebula"])[data-mode="light"] {
   --syn-keyword: #ad3da4;
   --syn-string: #c41a16;
   --syn-comment: #5d6c79;
@@ -2037,6 +2263,14 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 .shell[data-sidebar="right"] {
   flex-direction: row-reverse;
+}
+/* The threads in a bar across the top: the window is a column, the bar
+   over the room. */
+.shell[data-sidebar="top"] {
+  flex-direction: column;
+}
+.shell[data-sidebar="top"] > :is(.room-sheet, .workspace) {
+  min-height: 0;
 }
 
 /* The pane the keys moved to wears a ring, while there is more than one. */
@@ -2407,6 +2641,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
    ink a faint impression of the text's, since an accent there reads as a
    glitch, not a print. Nothing blurs and nothing glows. */
 :is(:root, .look)[data-material="paper"][data-mode] {
+  --glass-inset: inset 0 1px 0 0 var(--glass-spec);
   --radius: 4px;
   --control-radius: 3px;
   --panel-radius: 5px;
@@ -2440,6 +2675,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 /* Felt: opaque and soft, each panel with a seam of running stitch just
    inside its edge. */
 :is(:root, .look)[data-material="felt"][data-mode] {
+  --glass-inset: inset 0 1px 0 0 var(--glass-spec);
   --radius: 10px;
   --control-radius: 6px;
   --panel-radius: 16px;
@@ -2479,6 +2715,7 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 /* Plain: the panels are opaque surfaces with a hairline and their lift,
    and nothing shows through them. */
 :is(:root, .look)[data-material="plain"][data-mode] {
+  --glass-inset: inset 0 1px 0 0 var(--glass-spec);
   --glass-fill: var(--surface-1);
   --glass-fill-thick: var(--surface-2);
   --glass-fill-clear: color-mix(in srgb, var(--text) 6%, transparent);
@@ -2494,6 +2731,200 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 :is(:root, .look)[data-material="plain"][data-mode="light"] {
   --glass-rim: rgb(0 0 0 / 0.09);
   --glass-fill-clear: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+/* Liquid glass, as it is meant (design-glass.md, section 11): clearer, so
+   the backdrop shows bent through the rim; a light catching the top-left
+   edge and, fainter, the bottom-right; a glow inside the upper lip and a
+   shade in the lower. The lens itself is an SVG filter per panel
+   (liquidGlass.ts), read from --lens; until it is there the panel is the
+   frosted glass below. */
+@property --lens {
+  syntax: "*";
+  inherits: false;
+}
+:is(:root, .look)[data-material="glass"][data-mode] {
+  --glass-fill: color-mix(in srgb, var(--surface-2) 30%, transparent);
+  --glass-fill-thick: color-mix(in srgb, var(--surface-2) 76%, transparent);
+  --glass-fill-clear: color-mix(in srgb, var(--text) 4%, transparent);
+  --glass-blur: 4px;
+  --glass-saturate: 1.9;
+  --glass-rim: rgb(255 255 255 / 0.07);
+  --glass-sheen: linear-gradient(160deg, rgb(255 255 255 / 0.1), rgb(255 255 255 / 0) 36%, rgb(255 255 255 / 0) 72%, rgb(255 255 255 / 0.04));
+  --glass-inset:
+    inset 1.5px 1.5px 0.5px -1px rgb(255 255 255 / 0.62), inset -1.5px -1.5px 0.5px -1px rgb(255 255 255 / 0.3),
+    inset 0 14px 22px -18px rgb(255 255 255 / 0.28), inset 0 -12px 20px -16px rgb(0 0 0 / 0.32);
+  --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.2), 0 16px 40px -16px rgb(0 0 0 / 0.65);
+}
+:is(:root, .look)[data-material="glass"][data-mode="light"] {
+  --glass-fill: color-mix(in srgb, #fff 34%, transparent);
+  --glass-fill-thick: color-mix(in srgb, var(--surface-2) 80%, transparent);
+  --glass-fill-clear: color-mix(in srgb, #fff 40%, transparent);
+  --glass-rim: rgb(0 0 0 / 0.06);
+  --glass-sheen: linear-gradient(160deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0) 40%);
+  --glass-inset:
+    inset 1.5px 1.5px 0.5px -1px rgb(255 255 255 / 0.95), inset -1.5px -1.5px 0.5px -1px rgb(255 255 255 / 0.7),
+    inset 0 14px 22px -18px rgb(255 255 255 / 0.8), inset 0 -12px 20px -16px rgb(0 0 0 / 0.08);
+  --glass-shadow: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 16px 36px -18px rgb(0 0 0 / 0.25);
+}
+@media (prefers-reduced-transparency: no-preference) {
+  :root[data-material="glass"] :is(.liquid, .liquid-thick, .liquid-clear, .material) {
+    -webkit-backdrop-filter: var(--lens,) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    backdrop-filter: var(--lens,) blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  }
+  /* Menus and dialogs frost more, so their text never fights what is
+     behind; the rim still bends. */
+  :root[data-material="glass"] :is(.liquid-thick, .material) {
+    --glass-blur: 18px;
+  }
+  /* The sidebar's glass lies over the picture, under rows of text: it
+     frosts more, and its rim still bends the picture. */
+  :root[data-material="glass"] .shell > nav.sidebar > .liquid {
+    --glass-blur: 14px;
+    --glass-fill: color-mix(in srgb, var(--surface-2) 42%, transparent);
+  }
+}
+
+/* Smoked glass (Horizon's material, design-glass.md section 10): the
+   sidebar flush to the window's edge and opaque, and the picture behind
+   the room itself. What floats over it (the composer, the new-thread
+   screen's cards, menus) is dark glass with a fine rim and little blur,
+   so the dots stay crisp round it. A thread, a pane or a page reads
+   behind a veil: the picture is a glow there, never under the words. */
+:is(:root, .look)[data-material="smoke"][data-mode] {
+  --glass-inset: inset 0 1px 0 0 var(--glass-spec);
+  --panel-radius: 12px;
+  --sheet-radius: 10px;
+  --glass-fill: color-mix(in srgb, var(--surface-1) 58%, transparent);
+  --glass-fill-thick: color-mix(in srgb, var(--surface-2) 90%, transparent);
+  --glass-fill-clear: color-mix(in srgb, var(--text) 6%, transparent);
+  --glass-blur: 12px;
+  --glass-saturate: 1.3;
+  --glass-rim: color-mix(in srgb, var(--text) 9%, transparent);
+  --glass-spec: color-mix(in srgb, var(--text) 5%, transparent);
+  --glass-sheen: none;
+  --glass-shadow: 0 18px 44px -20px rgb(0 0 0 / 0.75);
+  --glass-shadow-clear: none;
+  --sheet-rim: transparent;
+  --sheet-shadow: none;
+  --tint-sheen: none;
+  --material-edge: none;
+  --sheet-edge: none;
+  --room-veil: color-mix(in srgb, var(--canvas) 86%, transparent);
+  --page-veil: color-mix(in srgb, var(--canvas) 93%, transparent);
+}
+:is(:root, .look)[data-material="smoke"][data-mode="light"] {
+  --glass-fill: color-mix(in srgb, var(--surface-1) 68%, transparent);
+  --glass-fill-thick: color-mix(in srgb, var(--surface-2) 92%, transparent);
+  --glass-rim: rgb(0 0 0 / 0.08);
+  --glass-spec: rgb(255 255 255 / 0.7);
+  --glass-shadow: 0 18px 44px -22px rgb(0 0 0 / 0.28);
+  --room-veil: color-mix(in srgb, var(--canvas) 88%, transparent);
+  --page-veil: color-mix(in srgb, var(--canvas) 94%, transparent);
+}
+/* The window: no gutter, the sidebar a flat column with a hairline on its
+   inner edge, and the room's panes square to it. */
+:root[data-material="smoke"] .shell {
+  gap: 0;
+  padding: 0;
+}
+:root[data-material="smoke"] .shell > nav.sidebar,
+:root[data-material="smoke"] .shell > nav.sidebar > .liquid {
+  border-radius: 0;
+}
+:root[data-material="smoke"] .shell > nav.sidebar > .liquid {
+  background: var(--sidebar);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  outline: none;
+  box-shadow: inset -1px 0 0 var(--hairline);
+}
+:root[data-material="smoke"] .shell[data-sidebar="right"] > nav.sidebar > .liquid {
+  box-shadow: inset 1px 0 0 var(--hairline);
+}
+:root[data-material="smoke"] .shell[data-sidebar="top"] > nav.sidebar > .liquid {
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
+/* The picture fills the room's side of the window. */
+:root[data-material="smoke"] body:has(.shell) .backdrop {
+  clip-path: inset(0 0 0 var(--sidebar-w));
+}
+/* Under the threads' top bar it fills the room below it. */
+:root[data-material="smoke"][data-sidebar="top"] body:has(.shell) .backdrop {
+  clip-path: inset(var(--topbar-h) 0 0 0);
+}
+:root[data-material="smoke"] body:has(.shell):not(:has(nav.sidebar)) .backdrop {
+  visibility: visible;
+  clip-path: none;
+}
+/* Panes and pages: clear, with the veil as a layer of their own under
+   their content (a backdrop filter on the pane itself would hold the
+   composer's and the menus' glass to it). The layer sits at z-index -1
+   in the window's stacking context, after the picture; the pane makes no
+   stacking context of its own, so a dialog inside it still rises over
+   the pane dividers. The new-thread screen has no veil: it is where the
+   picture shows whole. */
+:root[data-material="smoke"] .shell .stack:not([data-float]),
+:root[data-material="smoke"] .shell > .room-sheet {
+  border-radius: 0;
+  background-color: transparent;
+  box-shadow: none;
+}
+:root[data-material="smoke"] .shell .stack:not([data-float])::before,
+:root[data-material="smoke"] .shell > .room-sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--room-veil);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+}
+:root[data-material="smoke"] .shell > .room-sheet::before {
+  background: var(--page-veil);
+}
+:root[data-material="smoke"] .shell .stack:not([data-float]):has(.pane-slot:not([hidden]) .welcome)::before {
+  display: none;
+}
+:root[data-material="smoke"] .shell main.center {
+  background-color: transparent;
+}
+/* Neighbouring panes part on a hairline. */
+:root[data-material="smoke"] .shell .stack:not([data-float]) {
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+}
+/* The composer and what stacks on it are cards, not capsules. The send
+   button is a quiet light disc, as the rest of the bar is grey. */
+:root[data-material="smoke"] :is(.composer-box, .composer-above, .composer-banner) {
+  border-radius: 12px;
+}
+:root[data-material="smoke"] .composer .room-notice {
+  border-radius: 10px;
+}
+:root[data-material="smoke"] .composer .send:not(:disabled) {
+  background-color: color-mix(in srgb, var(--text) 86%, transparent);
+  background-image: none;
+  color: var(--canvas);
+  box-shadow: none;
+}
+/* The new-thread screen as Horizon's home: the mark before the question,
+   a little smaller, as a wordmark over the composer. */
+:root[data-material="smoke"] .welcome-mark {
+  display: inline-block;
+}
+:root[data-material="smoke"] .welcome-title {
+  font-size: 24px;
+  letter-spacing: -0.015em;
+}
+/* Reduce transparency: the veils turn solid, as every glass does. */
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-material="smoke"] .shell .stack:not([data-float])::before,
+  :root[data-material="smoke"] .shell > .room-sheet::before {
+    background: var(--canvas);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 /* ── Textures ──
@@ -2599,6 +3030,398 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   --spacing: 0.225rem;
 }
 
+/* ---- Liquid motion (design-glass.md, section 11) ------------------------
+   The segmented controls' pill is one shape the track draws, which slides
+   and stretches between choices (liquidGlass.ts plays the move). In the
+   Liquid Glass material, glass also gives under a press and springs back,
+   and menus and dialogs bloom open from a drop. Only scale and opacity
+   move; reduced motion holds them all still. */
+:root {
+  --spring: linear(0, 0.033, 0.121, 0.243, 0.385, 0.533, 0.675, 0.804, 0.915, 1.006, 1.074, 1.122, 1.15, 1.162, 1.161, 1.15, 1.132, 1.11, 1.086, 1.062, 1.04, 1.021, 1.004, 0.992, 0.983, 0.977, 0.974, 0.973, 0.975, 0.977, 0.981, 0.984, 0.988, 0.992, 0.995, 0.998, 1.001, 1.002, 1.003, 1.004, 1.003, 1.002, 1.001, 1);
+}
+.seg-track[data-seg]::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  top: 3px;
+  bottom: 3px;
+  left: var(--seg-l);
+  width: var(--seg-w);
+  border-radius: 999px;
+  background-color: var(--segment);
+  box-shadow: var(--shadow-card), inset 0 1px 0 0 var(--highlight);
+  pointer-events: none;
+}
+.seg-track[data-seg] > .seg-item {
+  position: relative;
+  z-index: 1;
+}
+.seg-track[data-seg] > .seg-on {
+  background-color: transparent;
+  box-shadow: none;
+}
+/* In liquid glass the pill is a bead of clearer glass. */
+:root[data-material="glass"] .seg-track[data-seg]::before {
+  background-color: color-mix(in srgb, var(--text) 13%, transparent);
+  box-shadow: var(--glass-inset, inset 0 1px 0 0 var(--glass-spec)), 0 2px 10px -3px rgb(0 0 0 / 0.4);
+}
+:root[data-material="glass"][data-mode="light"] .seg-track[data-seg]::before {
+  background-color: rgb(255 255 255 / 0.75);
+  box-shadow: var(--glass-inset, inset 0 1px 0 0 var(--glass-spec)), 0 2px 10px -3px rgb(0 0 0 / 0.18);
+}
+@keyframes liquid-bloom {
+  0% {
+    opacity: 0;
+    scale: 0.88 0.76;
+  }
+  55% {
+    opacity: 1;
+    scale: 1.02 1.04;
+  }
+  100% {
+    opacity: 1;
+    scale: 1 1;
+  }
+}
+:root[data-material="glass"]:not([data-motion="reduced"]) .material:not(.drag-ghost) {
+  animation: liquid-bloom 440ms var(--spring) both;
+}
+:root[data-material="glass"]:not([data-motion="reduced"]) button:is(.liquid-tint, .liquid-clear, .seg-item, [data-slot="button"]) {
+  transition-property: background-color, border-color, color, box-shadow, scale;
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 560ms;
+  transition-timing-function: ease, ease, ease, ease, var(--spring);
+}
+:root[data-material="glass"]:not([data-motion="reduced"]) button:is(.liquid-tint, .send):not(:disabled):hover {
+  scale: 1.06;
+}
+:root[data-material="glass"]:not([data-motion="reduced"]) button:is(.liquid-tint, .liquid-clear, .seg-item, [data-slot="button"]):not(:disabled):active {
+  scale: 0.9;
+  transition-duration: 160ms, 160ms, 160ms, 160ms, 90ms;
+}
+
+/* ---- The sidebar (ui/Sidebar.tsx, design-glass.md section 13) ----------
+   After T3 Code's Obsidian theme, and kept calm: the threads and little
+   else. The header holds a few faint glyphs (the inbox, Search, New
+   thread, Hide), the projects' heading is quiet type, a thread is a plain
+   grey row about 30px tall, and the open one is a card of soft grey with
+   a faint rim (--row-radius). The foot's glyphs sit on no ground. In
+   smoked glass the column is darker than the room, nearly black, and one
+   hairline parts it from the room. Project tiles lose their colour, and
+   the touch of blue is the accent's alone. */
+:root {
+  --row-radius: 10px;
+  --topbar-h: 40px;
+}
+:root[data-material="smoke"] {
+  --row-radius: 12px;
+}
+:root[data-material="smoke"][data-mode="dark"] {
+  --sidebar: color-mix(in oklab, var(--canvas) 45%, #000);
+}
+.sidebar {
+  --hover: color-mix(in srgb, var(--text) 4.5%, transparent);
+  --selected: color-mix(in srgb, var(--text) 8%, transparent);
+  --row-rim: color-mix(in srgb, var(--text) 7%, transparent);
+}
+:root[data-mode="light"] .sidebar {
+  --hover: color-mix(in srgb, var(--text) 4%, transparent);
+  --selected: color-mix(in srgb, var(--text) 7%, transparent);
+  --row-rim: color-mix(in srgb, var(--text) 8%, transparent);
+}
+/* The glyphs of the header and the foot: faint until the pointer is on
+   them. */
+.sidebar :is(.side-head, .side-foot, .bar-tools) :is(button, [data-slot="button"]):not([aria-current="page"]):not([aria-pressed="true"]) {
+  color: var(--text-faint);
+}
+.sidebar :is(.side-head, .side-foot, .bar-tools) :is(button, [data-slot="button"]):hover {
+  color: var(--text);
+}
+/* The open thread, the page in view: a soft card with a faint rim. */
+.sidebar :is(.session.open > [role="button"], [aria-current="page"]) {
+  background-color: var(--selected);
+  box-shadow: inset 0 0 0 1px var(--row-rim);
+}
+.sidebar .session:not(.open) > .session-main {
+  color: var(--text-muted);
+}
+.sidebar .session:not(.open) > .session-main:hover {
+  color: var(--text);
+}
+.sidebar .project-tile {
+  filter: grayscale(1);
+  opacity: 0.75;
+}
+/* Rows a little apart from the heading over them, groups a little apart
+   from each other. */
+.sidebar .project-group + .project-group {
+  padding-top: 0.25rem;
+}
+/* In the threads' top bar the open chip is the card; the bar's parts are
+   set apart by a short hairline. */
+.thread-bar .bar-rule {
+  width: 1px;
+  height: 1rem;
+  margin-inline: 0.25rem;
+  flex-shrink: 0;
+  background: var(--hairline);
+}
+.thread-bar .new-thread {
+  background-color: var(--hover);
+}
+.thread-bar .new-thread:hover {
+  background-color: var(--selected);
+}
+.thread-strip[data-fade-start],
+.thread-strip[data-fade-end] {
+  --fade-l: 0px;
+  --fade-r: 0px;
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade-l), #000 calc(100% - var(--fade-r)), transparent);
+}
+.thread-strip[data-fade-start] {
+  --fade-l: 20px;
+}
+.thread-strip[data-fade-end] {
+  --fade-r: 20px;
+}
+
+/* ---- Pages at the side (ui/Shell.tsx, layout/, design-glass.md
+   section 4) ---------------------------------------------------------------
+   Settings, Usage, Team and the inbox open as panes beside the
+   conversation, as tabs of their own stack with a "+" for another; a page
+   there keeps its controls but leaves its name to its tab, and steps
+   tighter. A full page has a button to step aside, in its top right
+   corner, which its header keeps clear of. */
+.page-pane {
+  container-type: inline-size;
+}
+.page-pane :is(.settings, .usage, .team, .inbox) > header:first-child {
+  height: 2.75rem;
+  padding-inline: 0.875rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.page-pane :is(.usage, .team, .inbox) > header:first-child > :is(h1, svg:first-child, span.text-faint) {
+  display: none;
+}
+.page-pane :is(.usage, .team, .inbox) > header:first-child > * {
+  flex-shrink: 0;
+}
+/* An empty page's plate stands over its words in a narrow pane. */
+.page-pane figure.empty {
+  flex-direction: column;
+  align-items: flex-start;
+}
+@container (min-width: 34rem) {
+  .page-pane figure.empty {
+    flex-direction: row;
+    align-items: flex-end;
+  }
+}
+/* In smoked glass the picture fills the room, so the gap between two
+   panes takes their veil too, not a raw slice of the print. */
+:root[data-material="smoke"] .shell .workspace .pane-divider {
+  background: var(--room-veil);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+}
+.page-pane .settings > header:first-child {
+  display: none;
+}
+.page-pane .settings > .min-h-0 > div {
+  padding-inline: 1rem;
+  gap: 2rem;
+}
+.page-pane .page-sections {
+  box-shadow: inset 0 -1px 0 var(--hairline);
+}
+.room-sheet[data-page] main > * > header:first-child {
+  padding-right: 3.75rem;
+}
+
+/* ---- The first screens (ui/Welcome.tsx FirstFrame, design-glass.md
+   section 12) ------------------------------------------------------------
+   The picture full bleed. The scrim pools the canvas behind the column,
+   deepest where the type is, and lets go towards the edges so the picture
+   shows whole there; a band at the top under the strip and one at the
+   foot under the credit. The actions, the agents, the pairing form and
+   the recent folders are cards of glass over it. */
+.first-scrim {
+  --pool: ellipse min(50rem, 72vw) min(42rem, 76vh) at 50% 50%;
+  background:
+    radial-gradient(
+      var(--pool),
+      color-mix(in srgb, var(--canvas) 84%, transparent),
+      color-mix(in srgb, var(--canvas) 72%, transparent) 50%,
+      color-mix(in srgb, var(--canvas) 22%, transparent) 100%
+    ),
+    linear-gradient(180deg, color-mix(in srgb, var(--canvas) 72%, transparent), transparent 5rem),
+    linear-gradient(0deg, color-mix(in srgb, var(--canvas) 40%, transparent), transparent 5rem);
+}
+/* Under the column the dots soften, as through smoked glass, so a hard
+   dither never fights the type; towards the edges they come back crisp. */
+.first-scrim::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  -webkit-backdrop-filter: blur(5px);
+  backdrop-filter: blur(5px);
+  -webkit-mask-image: radial-gradient(var(--pool), #000 35%, transparent 85%);
+  mask-image: radial-gradient(var(--pool), #000 35%, transparent 85%);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .first-scrim::before {
+    display: none;
+  }
+}
+/* The words over the picture keep a soft halo of the canvas, so a bright
+   patch never runs into a letter; the quiet half of the question reads in
+   the muted colour, not the faint one. */
+.first-hero {
+  text-shadow: 0 0 18px color-mix(in srgb, var(--canvas) 80%, transparent);
+}
+.first-hero .headline-quiet {
+  color: var(--text-muted);
+}
+/* The picture's credit, small in the corner, on a chip of the canvas so it
+   reads on any part of any picture. */
+.first-credit {
+  max-width: min(36rem, calc(100% - 1.5rem));
+  padding: 0.1875rem 0.5rem;
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--canvas) 64%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+.first-credit:empty {
+  display: none;
+}
+/* Liquid glass is clear by design; over a whole picture, under rows of
+   text, it frosts more, as the sidebar's does. */
+@media (prefers-reduced-transparency: no-preference) {
+  :root[data-material="glass"] .first-screen .liquid {
+    --glass-blur: 16px;
+    --glass-fill: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  }
+  :root[data-material="glass"][data-mode="light"] .first-screen .liquid {
+    --glass-fill: color-mix(in srgb, #fff 62%, transparent);
+  }
+}
+.first-primary {
+  --glass-rim: color-mix(in srgb, var(--primary) 50%, transparent);
+}
+.first-action {
+  transition:
+    scale 520ms var(--spring),
+    box-shadow 160ms;
+}
+.first-action:not(:disabled):hover {
+  scale: 1.015;
+}
+.first-action:not(:disabled):active {
+  scale: 0.98;
+}
+:root[data-motion="reduced"] .first-action {
+  transition: none;
+}
+
+/* ---- The effort dial (ui/EffortDial.tsx, design-glass.md section 12) ---
+   A model's reasoning effort as a dial: a ring of segments, one per level,
+   lit up to the level in the agent's hue (--hue, else the accent), round a
+   flat cap whose pointer turns to it. A new level spins the cap on the
+   spring and lights or darkens the segments one after another (--d counts
+   them from the side it turned from), so the light follows the pointer.
+   The agent's own level (data-auto) rests the pointer in the ring's gap
+   and shows the ring a little brighter than unlit, a scale at rest rather
+   than "off". */
+.effort-dial {
+  overflow: visible;
+}
+.dial-seg {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 1.75;
+  opacity: 0.2;
+  transition:
+    opacity 180ms var(--ease) calc(var(--d, 0) * 55ms),
+    stroke 180ms var(--ease) calc(var(--d, 0) * 55ms);
+}
+.dial-seg.on {
+  stroke: var(--hue, var(--primary));
+  opacity: 1;
+}
+.effort-dial[data-auto] .dial-seg {
+  opacity: 0.34;
+}
+:root[data-mode="light"] .dial-seg:not(.on) {
+  opacity: 0.16;
+}
+:root[data-mode="light"] .effort-dial[data-auto] .dial-seg {
+  opacity: 0.3;
+}
+.dial-cap {
+  transform-box: view-box;
+  transform-origin: center;
+  transition: rotate 680ms var(--spring);
+}
+.dial-face {
+  fill: color-mix(in srgb, var(--text) 9%, transparent);
+  stroke: var(--hairline-strong);
+  stroke-width: 1;
+}
+.dial-pointer {
+  stroke: var(--text);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+.effort-dial[data-auto] .dial-pointer {
+  stroke: var(--text-faint);
+}
+/* The bar's dial lifts its face under the pointer and while it is open. */
+.effort-picker:is(:hover, [aria-expanded="true"], :focus-visible) .dial-face {
+  fill: color-mix(in srgb, var(--text) 14%, transparent);
+}
+/* In the levels' column a row's dial lights with the row. */
+.effort-level:not(:hover, :focus-visible, [aria-checked="true"]) .effort-dial {
+  opacity: 0.8;
+}
+:root[data-motion="reduced"] :is(.dial-seg, .dial-cap) {
+  transition: none;
+}
+
+/* ---- The lead's control (ui/LeadPicker.tsx) ----------------------------
+   The agent's chip and its effort dial as one capsule on a hairline (in
+   Liquid Glass, clear glass). A new agent or model slides up into the
+   chip; the control eases to its width in script, on the spring. The
+   agent picker rises out of the bar from the chip's corner. */
+:root[data-material="glass"] .lead-control {
+  @apply liquid-clear;
+}
+.lead-swap {
+  animation: lead-swap 460ms var(--spring) both;
+}
+@keyframes lead-swap {
+  from {
+    opacity: 0;
+    translate: 0 60%;
+    filter: blur(2px);
+  }
+}
+:root:not([data-material="glass"]) .lead-pop {
+  transform-origin: 0 100%;
+  animation: lead-pop 360ms var(--spring) both;
+}
+@keyframes lead-pop {
+  from {
+    opacity: 0;
+    scale: 0.94;
+    translate: 0 6px;
+  }
+}
+:root[data-motion="reduced"] :is(.lead-swap, .lead-pop) {
+  animation: none;
+}
+
 /* ---- Project tiles (ui/ProjectIcon.tsx, projectIcon.ts) ----------------
    A project's monogram in its own hue, as a quiet tint with a hairline of
    the same hue, so it tells projects apart without becoming a second
@@ -2655,4 +3478,105 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
 }
 .history-graph[data-lod="far"] .hist-card {
   background-color: color-mix(in srgb, var(--hue, var(--text)) 30%, var(--surface-1));
+}
+
+/* ---- The starter tour (ui/Tour.tsx, tour.ts, design-glass.md section 14) -
+   Coach marks: a dim veil with a hole cut round the step's target (one
+   element whose huge spread shadow is the veil), a ring of the accent on
+   the hole's edge, and a card of thick glass beside it. Nothing but the
+   card takes a pointer: the window under the veil stays usable. A step
+   with no target shrinks the hole to a point, so the veil covers all. */
+.tour {
+  --tour-veil: rgb(4 4 10 / 0.56);
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+:root[data-mode="light"] .tour {
+  --tour-veil: rgb(20 18 32 / 0.32);
+}
+.tour-spot {
+  position: fixed;
+  box-shadow: 0 0 0 200vmax var(--tour-veil);
+  transition:
+    left 420ms var(--ease),
+    top 420ms var(--ease),
+    width 420ms var(--ease),
+    height 420ms var(--ease),
+    border-radius 420ms var(--ease);
+  animation: tour-veil 260ms var(--ease) both;
+}
+.tour-spot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow:
+    0 0 0 1.5px color-mix(in srgb, var(--primary) 80%, transparent),
+    0 0 24px 2px color-mix(in srgb, var(--primary) 32%, transparent);
+  animation: tour-breathe 2.4s ease-in-out infinite;
+}
+.tour-spot[data-empty]::after {
+  display: none;
+}
+.tour-card {
+  position: fixed;
+  width: min(21rem, calc(100vw - 1.5rem));
+  pointer-events: auto;
+  transition:
+    left 420ms var(--ease),
+    top 420ms var(--ease);
+  animation: tour-card 300ms var(--ease) both;
+}
+.tour-text {
+  animation: tour-step 260ms var(--ease) both;
+}
+.tour-key {
+  padding: 0 0.3em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+/* The dots: one per step that shows, the current one a capsule of the
+   accent. */
+.tour-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition:
+    width 260ms var(--ease),
+    background-color 260ms var(--ease);
+}
+.tour-dot[aria-current="step"] {
+  width: 16px;
+  background: var(--primary);
+}
+@keyframes tour-veil {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes tour-card {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+    scale: 0.98;
+  }
+}
+@keyframes tour-step {
+  from {
+    opacity: 0;
+    translate: 0 3px;
+  }
+}
+@keyframes tour-breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+:root[data-motion="reduced"] :is(.tour-spot, .tour-card, .tour-text, .tour-dot),
+:root[data-motion="reduced"] .tour-spot::after {
+  transition: none;
+  animation: none;
 }

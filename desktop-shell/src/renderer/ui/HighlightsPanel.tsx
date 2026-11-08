@@ -1,4 +1,5 @@
 import type { Approval } from "@web/protocol";
+import { agentName } from "../agentName";
 import { useCallback, useEffect, useState } from "react";
 import type { AgentSummary, HighlightItem, HighlightKind } from "../../shared/bridge";
 import { useRoomStatus } from "../appState";
@@ -195,7 +196,7 @@ function ApprovalRow({ a }: { a: Approval }) {
           <p className="truncate font-mono text-xs" title={approvalSummary(a)}>
             {approvalSummary(a)}
           </p>
-          <p className="mt-1 text-2xs text-faint">{a.agent} · Approve or decline above the composer</p>
+          <p className="mt-1 text-2xs text-faint">{agentName(a.agent)} · Approve or decline above the composer</p>
         </div>
       </div>
     </li>
@@ -226,7 +227,7 @@ function ItemRow({
           </p>
           {item.detail !== "" && <p className="mt-0.5 whitespace-pre-wrap text-muted-foreground text-xs leading-relaxed">{item.detail}</p>}
           <p className="mt-1 flex items-center gap-2 text-2xs text-faint">
-            <span>{item.agent}</span>
+            <span>{agentName(item.agent)}</span>
             {hasSource && (
               <button type="button" className="cursor-pointer underline-offset-2 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onOpenSource(item)}>
                 Show source
@@ -257,7 +258,7 @@ function SummaryView({ summaries }: { summaries: readonly AgentSummary[] }) {
       {rows.map((r) => (
         <li key={r.agent} className="text-sm">
           <p className="flex items-baseline gap-2">
-            <span className="font-medium">{r.agent}</span>
+            <span className="font-medium">{agentName(r.agent)}</span>
             <span className="text-2xs text-faint">agent update</span>
           </p>
           <p className="mt-0.5 text-muted-foreground text-xs leading-relaxed">{r.text}</p>

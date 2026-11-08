@@ -8,7 +8,10 @@ import {
   complete,
   dock,
   dockRoot,
+  isPage,
   type Layout,
+  openPage,
+  pageOf,
   type Node,
   normalize,
   panesOf,
@@ -276,5 +279,33 @@ describe("validate", () => {
       projects: { a: { v: 1 } },
     });
     expect(Object.keys(parseSaved(JSON.stringify({ projects: { a: good(), b: { v: 9 } } })).projects)).toEqual(["a"]);
+  });
+});
+
+describe("pages at the side", () => {
+  test("a page opens beside the room, the next joins it as a tab, and closing takes it out", () => {
+    let l = preset("default", "right");
+    l = openPage(l, "settings", "right");
+    expect(shape(l.root)).toEqual(["row", ["col", CONVERSATION, "term:1"], PANELS_STACK, "page:settings"]);
+    l = openPage(l, "usage", "right");
+    expect(stackOf(l.root, "page:usage")?.panes).toEqual(["page:settings", "page:usage"]);
+    expect(stackOf(l.root, "page:usage")?.active).toBe("page:usage");
+    // Open again, it comes to the front rather than twice.
+    l = openPage(l, "settings", "right");
+    expect(panesOf(l.root).filter(isPage)).toEqual(["page:settings", "page:usage"]);
+    expect(stackOf(l.root, "page:settings")?.active).toBe("page:settings");
+    l = removePane(removePane(l, "page:settings"), "page:usage");
+    expect(shape(l.root)).toEqual(["row", ["col", CONVERSATION, "term:1"], PANELS_STACK]);
+  });
+
+  test("a saved page pane survives the check, and names its page", () => {
+    const l = validate({
+      v: 1,
+      root: { kind: "split", dir: "row", children: [{ kind: "stack", panes: [CONVERSATION] }, { kind: "stack", panes: ["page:inbox", "page:nope"] }] },
+    });
+    expect(l === null ? null : panesOf(l.root)).toContain("page:inbox");
+    expect(l === null ? null : panesOf(l.root)).not.toContain("page:nope");
+    expect(pageOf("page:team")).toBe("team");
+    expect(pageOf("changes")).toBeNull();
   });
 });

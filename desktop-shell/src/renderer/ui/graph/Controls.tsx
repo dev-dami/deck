@@ -1,4 +1,5 @@
 import type { Theme } from "@web/protocol";
+import { agentName } from "../../agentName";
 import { kindMark } from "@web/theme";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { agentColour } from "../../agents";
@@ -293,7 +294,7 @@ export function HistoryFilters({
         <span aria-hidden className="font-mono text-(--hue)" style={hueOf(a.name, a.kind)}>
           {kindMark(theme, a.kind) || "●"}
         </span>
-        {a.name}
+        {agentName(a.name)}
       </>
     ),
   }));

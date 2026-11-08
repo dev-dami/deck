@@ -257,9 +257,14 @@ export function filterLane(messages: Message[], lane: string | null): Message[] 
 }
 
 // The short id of a room's corner index: the last three base36 characters
-// of its id, so "ses_01HZ7A3F" reads "a3f". The header, the sidebar rows
-// and the plan cards all show this one.
+// of its id, so "ses_01HZ7A3F" reads "a3f". An id that is a name rather
+// than a hash ("ses_main": a type prefix and a short word, no digits) reads
+// as that name, "main", since three of its letters ("ain") mean nothing.
+// The header and the plan cards both show this one.
 export function shortId(id: string): string {
-  const tail = id.toLowerCase().replace(/[^0-9a-z]/g, "").slice(-3);
+  const lower = id.toLowerCase();
+  const name = /^[a-z]+_([a-z]{1,8})$/.exec(lower)?.[1];
+  if (name !== undefined) return name;
+  const tail = lower.replace(/[^0-9a-z]/g, "").slice(-3);
   return tail === "" ? id.slice(-3) : tail;
 }

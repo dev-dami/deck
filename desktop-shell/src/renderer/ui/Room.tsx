@@ -39,6 +39,8 @@ import { QuotaMark, RoomQuota, sendAtReset, WaitBanner } from "./Limits";
 import { RoomLevel } from "./LevelPicker";
 import { type AnsweredRecord, RoomAsk } from "./RoomAsk";
 import { ModePicker } from "./ModePicker";
+import { isSide } from "../sideChat";
+import { Home } from "./Home";
 import { NewThread } from "./NewThread";
 import { type Lead, LeadPicker } from "./LeadPicker";
 import { RoomHeader } from "./RoomHeader";
@@ -294,6 +296,8 @@ export function Room({
   const defaultKind = kinds.includes("claude") || kinds.length === 0 ? "claude" : (kinds[0] ?? "claude");
   const flows = c.capabilities === undefined ? [] : workflowsFor(kinds, nextLead?.kind ?? defaultKind);
   const picked = flows.find((w) => w.id === workflow) ?? null;
+  // The home's threads: the ones you started, without side chats.
+  const homeThreads = useMemo(() => state.sessions.filter((s) => !isSide(s) && (s.parent_id ?? "") === ""), [state.sessions]);
   const live = useRoomLive(c, sid);
   const strip = serves(c, "Highlights") ? stripItem(live.items) : null;
   const queued = sid === null ? 0 : (state.queue[sid]?.length ?? 0);
@@ -436,6 +440,7 @@ export function Room({
           workflows={flows}
           picked={workflow}
           onPick={setWorkflow}
+          home={<Home api={api} sessions={homeThreads} onOpen={(id) => onOpenThread?.(id)} />}
         >
           <Composer
             key={NEW}

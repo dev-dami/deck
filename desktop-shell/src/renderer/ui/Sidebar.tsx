@@ -17,10 +17,10 @@ import { EMPTY_ROOM, useRoomMetas } from "../roomMeta";
 import { kindsBySession, sameKinds, useAppSlice } from "../select";
 import { SETTLE_AFTER_MS } from "../threads";
 import { SETTINGS_SECTIONS, type SettingsSection } from "../ui";
-import { Kbd } from "./kit/badge";
 import { Button } from "./kit/button";
 
 import { modKey } from "./keys";
+import { type BarGroup, ThreadBar, ThreadChip } from "./ThreadBar";
 import { navRow, ProjectFilter, ProjectGroup, RecentProjects, SharedGroup, type SharedEntry, type SidebarItem, ThreadList } from "./ProjectGroup";
 import { SidebarFooter } from "./SidebarFooter";
 import { ThreadRow } from "./ThreadRow";
@@ -125,10 +125,12 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   const { project, source, sessions, openId, unread, settings, inbox, projects, theme } = data;
   // Threads under their project folders (T3 Code's projects), or one list
   // across projects, newest first; card or compact rows. On the left or the
-  // right of the window, as wide as the person dragged it.
+  // right of the window, as wide as the person dragged it, or as a bar of
+  // chips across the top (ThreadBar.tsx).
   const { grouping, rows, sidebarSide, sidebarWidth } = usePrefs();
+  const bar = sidebarSide === "top";
   // On a Mac the traffic lights sit in the window's top left corner.
-  const lights = data.mac && sidebarSide === "left";
+  const lights = data.mac && sidebarSide !== "right";
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 30_000);
@@ -215,9 +217,10 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
   // The rows in the order they show, for Ctrl/Cmd+1 to 9: a virtual list
   // leaves rows out of the page, so the order comes from the lists.
   const shownRows: RowRef[] = [];
+  // The bar shows every project's live and settled threads.
   for (const l of lists) {
-    if (grouped && collapsed[l.key] === true) continue;
-    for (const x of [...l.live, ...(showSettled[l.key] === true ? l.settled : [])]) shownRows.push({ source: x.source, id: x.s.id });
+    if (!bar && grouped && collapsed[l.key] === true) continue;
+    for (const x of [...l.live, ...(bar || showSettled[l.key] === true ? l.settled : [])]) shownRows.push({ source: x.source, id: x.s.id });
   }
   const digitOf = new Map(shownRows.slice(0, 9).map((r, i) => [`${r.source}/${r.id}`, i + 1]));
   const row = (x: SidebarItem) => {
@@ -262,13 +265,124 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
       onToggleArchived={() => setShowArchived((v) => ({ ...v, [l.key]: v[l.key] !== true }))}
       row={row}
       scroller={scroller}
-      estimate={rows === "compact" ? 34 : grouped ? 60 : 80}
+      estimate={rows === "compact" ? 31 : grouped ? 53 : 71}
     />
   );
   const recentClosed = projects.filter((p) => !p.open && p.kind === "folder");
   useEffect(() => {
     if (settings === null) order.current = shownRows;
   });
+  const mod = modKey(data.mac);
+  // The header's glyphs: what waits on you (its count in the warning's
+  // colour, no badge), Search and New thread. Faint, on no ground.
+  const inboxButton = (
+    <button
+      type="button"
+      aria-label={data.inboxCount > 0 ? `Inbox, ${data.inboxCount} waiting` : "Inbox"}
+      title="Inbox"
+      aria-current={inbox ? "page" : undefined}
+      className={cn("inbox-entry", glyph(inbox), data.inboxCount > 0 && "gap-1 px-1.5")}
+      onClick={actions.onInbox}
+    >
+      <InboxIcon weight={inbox ? "fill" : "regular"} />
+      {data.inboxCount > 0 && <span className="inbox-count font-medium text-2xs text-warning-foreground tabular-nums">{data.inboxCount}</span>}
+    </button>
+  );
+  const searchButton = (
+    <button type="button" aria-label="Search" title={`Search (${mod}K)`} className={glyph(false)} onClick={actions.onPalette}>
+      <Search />
+    </button>
+  );
+  const hideButton = (
+    <HeaderButton label="Hide the sidebar" onClick={actions.onCollapse}>
+      {sidebarSide === "right" ? <PanelRight /> : sidebarSide === "top" ? <PanelLeft className="rotate-90" /> : <PanelLeft />}
+    </HeaderButton>
+  );
+  const foot = (
+    <SidebarFooter
+      bar={bar}
+      link={data.link}
+      settings={settings}
+      usage={data.usage}
+      team={data.team}
+      online={data.online}
+      update={data.update}
+      onSettings={actions.onSettings}
+      onUsage={actions.onUsage}
+      onTeam={actions.onTeam}
+      onDisconnect={actions.onDisconnect}
+    />
+  );
+  const filterControl = (variant: "heading" | "bar") => (
+    <ProjectFilter
+      variant={variant}
+      filter={filter}
+      projects={projects}
+      onFilter={setFilter}
+      onProject={actions.onProject}
+      onCloseProject={actions.onCloseProject}
+      onAddProject={actions.onAddProject}
+      onPair={actions.onConnect}
+    />
+  );
+
+  if (bar) {
+    const openItem = (x: SidebarItem) => (x.foreign === null ? latest.current.onOpen(x.s.id) : latest.current.onForeign(x.foreign.source, x.s.id));
+    const chip = (x: SidebarItem, settledChip: boolean) => {
+      const s = x.s;
+      const f = x.foreign;
+      const offer: ArchiveOffer = unarchiveOf(x) !== undefined ? "archived" : archiveOffer(x);
+      return (
+        <ThreadChip
+          key={`${x.source}/${s.id}`}
+          s={s}
+          active={f === null && s.id === openId && settings === null && !inbox}
+          unread={f === null && unread[s.id] === true}
+          status={x.status}
+          settled={settledChip}
+          digit={data.digits ? (digitOf.get(`${x.source}/${s.id}`) ?? null) : null}
+          archive={offer}
+          onOpen={() => openItem(x)}
+          onRename={(t) => void (f === null ? latest.current.onRename(s.id, t) : f.c.renameSession(s.id, t))}
+          onDelete={() => void (f === null ? latest.current.onDelete(s.id) : f.c.deleteSession(s.id))}
+          onArchive={() => archive(x)}
+          onUnarchive={unarchiveOf(x)}
+          onMenu={() => latest.current.onThreadMenu(s.id, sessionTitle(s), offer)}
+        />
+      );
+    };
+    const barGroups: BarGroup[] = grouped
+      ? groups.map((g, i) => ({ project: g, live: lists[i]!.live, settled: lists[i]!.settled, archived: lists[i]!.archived }))
+      : [{ project: { key: "all", name: "Threads", detail: "", kind: "folder", active: true, open: true }, ...lists[0]! }];
+    return (
+      <nav className="sidebar thread-bar relative z-10 flex w-full shrink-0 flex-col rounded-(--panel-radius)" aria-label="Threads" data-yolo-region="">
+        <div aria-hidden className="liquid absolute inset-0 rounded-(--panel-radius)" />
+        <ThreadBar
+          lights={lights}
+          openId={openId}
+          groups={barGroups}
+          chip={chip}
+          settings={settings}
+          onSettings={actions.onSettings}
+          onOpenItem={openItem}
+          onNew={actions.onNew}
+          newTitle={`New thread (${mod}N)`}
+          left={filterControl("bar")}
+          right={
+            <span className="flex shrink-0 items-center gap-px">
+              {searchButton}
+              {inboxButton}
+              <span aria-hidden className="bar-rule" />
+              {foot}
+              <span aria-hidden className="bar-rule" />
+              {hideButton}
+            </span>
+          }
+        />
+      </nav>
+    );
+  }
+
   return (
     // Above the room's sheet, so the project menu can open over it.
     <nav className="sidebar relative z-10 flex w-(--sidebar-w) shrink-0 flex-col rounded-(--panel-radius)" aria-label="Threads" data-yolo-region="">
@@ -278,27 +392,28 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
       <div aria-hidden className="liquid absolute inset-0 rounded-(--panel-radius)" />
       {/* The first row is the title bar's: on a Mac the traffic lights sit
           at (18, 19) in the window, so a 36px row centres them. It stays
-          36px in a compact window. */}
-      <header className={cn("drag relative flex shrink-0 items-center gap-2 pr-2", data.mac ? "h-[36px]" : "h-11", lights ? "pl-[72px]" : "pl-3.5")}>
+          36px in a compact window. It holds the few glyphs the sidebar
+          keeps at hand; the rest of it is the threads. */}
+      <header className={cn("side-head drag relative flex h-[36px] shrink-0 items-center gap-px pr-1.5", lights ? "pl-[72px]" : "pl-2")}>
         {/* No mark or name here: the window and the dock already say it is
             Deck, and beside the threads it read as a second logo. */}
-        <span className="ml-auto flex items-center">
-          <HeaderButton label="Hide the sidebar" onClick={actions.onCollapse}>
-            {sidebarSide === "left" ? <PanelLeft /> : <PanelRight />}
-          </HeaderButton>
-          <HeaderButton label="New thread" onClick={actions.onNew}>
+        <span className="ml-auto flex items-center gap-px">
+          {inboxButton}
+          {searchButton}
+          <button type="button" aria-label="New thread" title={`New thread (${mod}N)`} className={cn("new-thread", glyph(false))} onClick={actions.onNew}>
             <SquarePen />
-          </HeaderButton>
+          </button>
+          {hideButton}
         </span>
       </header>
       {settings !== null ? (
-        <div className="relative flex min-h-0 flex-1 flex-col gap-0.5 px-2 pt-1">
+        <div className="relative flex min-h-0 flex-1 flex-col gap-px px-2 pt-1">
           <button type="button" className={navRow(false)} onClick={() => actions.onSettings(null)}>
             <ArrowLeft />
             Back to threads
           </button>
-          <div className="px-2.5 pt-4 pb-1 font-semibold text-2xs text-faint">Settings</div>
-          <ul className="flex flex-col gap-0.5" aria-label="Settings sections">
+          <div className="px-2.5 pt-3 pb-1 font-medium text-2xs text-faint">Settings</div>
+          <ul className="flex flex-col gap-px" aria-label="Settings sections">
             {SETTINGS_SECTIONS.map((x) => (
               <li key={x.section}>
                 <button
@@ -315,29 +430,10 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
         </div>
       ) : (
         <>
-          <div className="relative z-10 flex flex-col gap-0.5 px-2 pt-1 pb-2">
-            <button type="button" className={navRow(false)} onClick={actions.onPalette}>
-              <Search />
-              Search
-              <Kbd className="ml-auto border-0 bg-transparent px-0 font-sans text-2xs text-faint">{modKey(data.mac)}K</Kbd>
-            </button>
-            {/* What waits on you: the count in the warning's colour, no badge. */}
-            <button type="button" aria-current={inbox ? "page" : undefined} className={cn("inbox-entry", navRow(inbox))} onClick={actions.onInbox}>
-              <InboxIcon weight={inbox ? "fill" : "regular"} />
-              Inbox
-              {data.inboxCount > 0 && <span className="inbox-count ml-auto font-medium text-2xs text-warning-foreground tabular-nums">{data.inboxCount}</span>}
-            </button>
-            <ProjectFilter
-              filter={filter}
-              projects={projects}
-              onFilter={setFilter}
-              onProject={actions.onProject}
-              onCloseProject={actions.onCloseProject}
-              onAddProject={actions.onAddProject}
-              onPair={actions.onConnect}
-            />
-          </div>
-          <ul ref={scroller} className="sessions relative flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pt-0.5 pb-2">
+          {/* The projects' heading, after T3 Code's: the filter, and Add
+              project on hover. */}
+          <div className="relative z-10 shrink-0 px-2 pt-1">{filterControl("heading")}</div>
+          <ul ref={scroller} className="sessions relative flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto px-2 pt-0.5 pb-2">
             {grouped
               ? groups.map((g, i) => (
                   <ProjectGroup
@@ -362,22 +458,19 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
           </ul>
         </>
       )}
-      <SidebarFooter
-        link={data.link}
-        settings={settings}
-        usage={data.usage}
-        team={data.team}
-        online={data.online}
-        update={data.update}
-        onSettings={actions.onSettings}
-        onUsage={actions.onUsage}
-        onTeam={actions.onTeam}
-        onDisconnect={actions.onDisconnect}
-      />
+      {foot}
       <Grip side={sidebarSide} width={sidebarWidth} />
     </nav>
   );
 }
+
+// A glyph of the header: faint, brighter on hover, a soft card while its
+// page is open.
+const glyph = (on: boolean) =>
+  cn(
+    "relative flex h-7 min-w-7 shrink-0 cursor-pointer items-center justify-center rounded-[8px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring [&_svg]:size-4 [&_svg]:shrink-0",
+    on ? "bg-selected text-foreground" : "text-muted-foreground hover:bg-hover hover:text-foreground",
+  );
 
 // How far across the window the grip goes before the sidebar moves to the
 // other side, as a share of the window's width.

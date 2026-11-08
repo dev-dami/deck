@@ -1,4 +1,5 @@
 import type { Theme } from "@web/protocol";
+import { agentName } from "../../agentName";
 import { kindMark } from "@web/theme";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { agentColour } from "../../agents";
@@ -458,7 +459,7 @@ const HistoryCard = memo(function HistoryCard({
               <span aria-hidden className="font-mono text-(--hue)">
                 {mark}
               </span>
-              <span className="shrink-0 font-medium text-(--hue)">{agent}</span>
+              <span className="shrink-0 font-medium text-(--hue)">{agentName(agent ?? "")}</span>
               <span className="text-muted-foreground">{n.title}</span>
               {n.meta !== "" && <span className="ml-auto shrink-0 font-mono text-faint tabular-nums">{n.meta}</span>}
             </span>
@@ -468,7 +469,7 @@ const HistoryCard = memo(function HistoryCard({
                 <span aria-hidden className="font-mono text-(--hue)">
                   {mark}
                 </span>
-                <span className="shrink-0 font-medium text-(--hue)">{agent}</span>
+                <span className="shrink-0 font-medium text-(--hue)">{agentName(agent ?? "")}</span>
                 <span className="truncate text-muted-foreground">{n.title}</span>
               </span>
               <span className={cn("hist-text truncate text-xs", n.ask?.state === "pending" ? "text-warning-foreground" : "text-foreground")}>

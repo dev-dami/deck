@@ -7,7 +7,7 @@
 import type { PictureProcess } from "../themes";
 import { hex, mix, type RGB } from "./core";
 
-export type Process = "scene" | "halftone" | "stitch";
+export type Process = "scene" | "halftone" | "stitch" | "spectrum";
 export type Mode = "light" | "dark";
 
 // Liquid Glass and its colourways: the picture dithered (Atkinson) into
@@ -72,7 +72,25 @@ export interface StitchArt {
   cell: number;
 }
 
-export type Art = SceneArt | HalftoneArt | StitchArt;
+// Horizon: the picture dithered in red, green and blue, each channel on its
+// own, into `steps` levels between the ground and the peak, at `cell` px
+// (spectrum.ts). gain scales the picture first; floor and noise lift the
+// shadows into a speckle. In light, the picture is laid on paper.
+export interface SpectrumArt {
+  process: "spectrum";
+  picture: string;
+  ground: RGB;
+  peak: RGB;
+  light: boolean;
+  paper: RGB;
+  steps: number;
+  cell: number;
+  gain: number;
+  floor: number;
+  noise: number;
+}
+
+export type Art = SceneArt | HalftoneArt | StitchArt | SpectrumArt;
 
 export const SPOT = hex("#ff48b0");
 
@@ -115,6 +133,33 @@ const RISO_LIGHT: HalftoneArt = {
   ground: hex("#f3eee3"),
   key: hex("#1d1b1b"),
   onBlack: false,
+};
+
+const NIGHT: SpectrumArt = {
+  process: "spectrum",
+  picture: "horizon",
+  ground: hex("#0b0b0d"),
+  peak: hex("#ffffff"),
+  light: false,
+  paper: hex("#0b0b0d"),
+  steps: 4,
+  cell: 1.5,
+  gain: 0.8,
+  floor: 0.01,
+  noise: 0.05,
+};
+
+// In light the paper is the peak itself, so bare paper prints clean and
+// only the picture's colours break it into dots.
+const DAY: SpectrumArt = {
+  ...NIGHT,
+  ground: hex("#3a3a44"),
+  peak: hex("#f6f6f7"),
+  light: true,
+  paper: hex("#ffffff"),
+  gain: 1,
+  floor: 0,
+  noise: 0.04,
 };
 
 // DMC-like floss for the picture: tonal, so Deck's cards stay the subject.
@@ -161,7 +206,10 @@ const DEEP_FIELD: SceneArt = {
   side: 0.55,
 };
 
-export const PROCESS: Record<string, Process> = { riso: "halftone", stitch: "stitch" };
+export const PROCESS: Record<string, Process> = { riso: "halftone", stitch: "stitch", horizon: "spectrum", aurora: "spectrum", dune: "spectrum", nebula: "spectrum" };
+
+// The picture each spectrum look prints: its own, never another's.
+export const SPECTRUM_PICTURES: Record<string, string> = { horizon: "horizon", aurora: "aurora", dune: "dune", nebula: "nebula" };
 
 // A theme's own process: the one its preset prints through.
 export function processOf(theme: string): Process {
@@ -171,7 +219,7 @@ export function processOf(theme: string): Process {
 // The process the person picked (themes.ts), as the backdrop names it.
 // "none" prints nothing behind the window; a print on a page dithers.
 export function artProcess(p: PictureProcess): Process {
-  return p === "halftone" || p === "stitch" ? p : "scene";
+  return p === "halftone" || p === "stitch" || p === "spectrum" ? p : "scene";
 }
 
 // The colours a colourway is drawn from: the theme's tokens as RGB.
@@ -233,6 +281,15 @@ export function artFor(theme: string, mode: Mode, tokens?: Tokens, use: Use = "w
   if (process === "halftone") {
     const art = theme === "riso" || tokens === undefined ? (mode === "dark" ? RISO_DARK : RISO_LIGHT) : risoIn(mode, tokens);
     return use === "print" ? { ...art, margin: 0 } : art;
+  }
+  if (process === "spectrum") {
+    // Horizon and its sisters print their own pictures; another theme's
+    // colours print Horizon's, its backdrop the ground, or in light its
+    // canvas the paper.
+    const own = SPECTRUM_PICTURES[theme];
+    if (own !== undefined) return { ...(mode === "dark" ? NIGHT : DAY), picture: own };
+    if (tokens === undefined) return mode === "dark" ? NIGHT : DAY;
+    return mode === "dark" ? { ...NIGHT, ground: tokens.backdrop, paper: tokens.backdrop } : { ...DAY, peak: tokens.canvas };
   }
   if (process === "stitch") {
     const art = theme === "stitch" || tokens === undefined ? (mode === "dark" ? DENIM : LINEN) : stitchIn(mode, tokens);

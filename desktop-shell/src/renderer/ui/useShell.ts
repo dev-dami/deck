@@ -278,6 +278,7 @@ export function useShellCommands(
       addProject: live("addProject"),
       switchDeck: live("switchDeck"),
       welcome: live("welcome"),
+      tour: live("tour"),
     });
     return [...list, ...previewCommands(ports, (url) => latest.current.preview(url))];
     // A new probe makes a new ports array; the commands change with its URLs.

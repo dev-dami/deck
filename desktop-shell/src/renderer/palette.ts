@@ -57,6 +57,8 @@ export interface CommandDeps {
   addProject: () => void;
   switchDeck: () => void;
   welcome: () => void;
+  // The starter tour (tour.ts), from its first step.
+  tour: () => void;
 }
 
 export function paletteCommands(d: CommandDeps): Command[] {
@@ -94,6 +96,7 @@ export function paletteCommands(d: CommandDeps): Command[] {
     { id: "add-project", label: "Add project…", hint: `${mod}O`, run: d.addProject },
     { id: "switch", label: "Switch Deck", run: d.switchDeck },
     { id: "welcome", label: "Welcome", run: d.welcome },
+    { id: "tour", label: "Show the tour", run: d.tour },
   ];
 }
 

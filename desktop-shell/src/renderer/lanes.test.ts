@@ -202,11 +202,24 @@ test("the paths of a lease summary", () => {
 test("a short id is the last three base36 characters of the id", () => {
   expect(shortId("ses_a7f3e2")).toBe("3e2");
   expect(shortId("ses_01HZ7A3F")).toBe("a3f");
-  expect(shortId("ses_main")).toBe("ain");
+  expect(shortId("3f2a9c1e-7b4d-4e8a-9f00-1c2d3e4f5a6b")).toBe("a6b");
   // Separators do not count; an id of fewer characters is all of them.
   expect(shortId("a_b-c")).toBe("abc");
   expect(shortId("x9")).toBe("x9");
   expect(shortId("___")).toBe("___");
+});
+
+test("a short id of a named room is its name, whole", () => {
+  // The last three of "ses_main" would read "ain"; a name keeps all its letters.
+  expect(shortId("ses_main")).toBe("main");
+  expect(shortId("ses_docs")).toBe("docs");
+  expect(shortId("SES_Long")).toBe("long");
+  // A hash-like body (digits, or longer than a name) still reads its last three.
+  expect(shortId("ses_a7f3e2")).toBe("3e2");
+  expect(shortId("ses_abcdefghij")).toBe("hij");
+  // No type prefix, or more than one separator, is not a name.
+  expect(shortId("main")).toBe("ain");
+  expect(shortId("a_b-c")).toBe("abc");
 });
 
 describe("CLI-native subagents", () => {

@@ -6,6 +6,7 @@ import { type Ctx, context, type Framing, type Source, scratch } from "./canvas"
 import { renderHalftone } from "./halftone";
 import type { Art } from "./inks";
 import { renderScene } from "./scene";
+import { renderSpectrum } from "./spectrum";
 import { renderStitch } from "./stitch";
 
 export interface Job {
@@ -21,6 +22,7 @@ export function draw(ctx: Ctx, job: Job, img: Source | null): void {
   const { W, H, dpr, art, framing } = job;
   if (art.process === "halftone") renderHalftone(ctx, W, H, dpr, art, img, framing);
   else if (art.process === "stitch") renderStitch(ctx, W, H, dpr, art, img, framing);
+  else if (art.process === "spectrum") renderSpectrum(ctx, W, H, dpr, art, img, framing);
   else renderScene(ctx, W, H, dpr, art, img, framing);
 }
 

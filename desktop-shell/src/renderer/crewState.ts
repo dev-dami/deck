@@ -1,5 +1,7 @@
 import type { Store } from "@web/controller";
+import { Effect } from "effect";
 import { useEffect, useSyncExternalStore } from "react";
+import { interrupt, pollLoop, runFork } from "../shared/effect";
 import type { Board, Crew, Team } from "./crew";
 import type { ProjectApi } from "./project";
 import { teamOn } from "./teamGate";
@@ -81,28 +83,28 @@ export function teamOf(api: ProjectApi | undefined): Team | null {
 export function watchCrew(api: ProjectApi, store: Store, openId: () => string | null, onChange: () => void): () => void {
   const w = watchOf(api);
   w.onChange = onChange;
-  let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
   let busyBefore = new Set<string>();
   let teamAt = 0;
-  const tick = async () => {
+  // One round, all at once (a failed fetch keeps what the room had), and
+  // the wait before the next.
+  const poll = Effect.suspend(() => {
     const busy = new Set(store.state.sessions.filter((s) => s.busy).map((s) => s.id));
     const ids = new Set([...busy, ...busyBefore]);
     const open = openId();
     if (open !== null) ids.add(open);
     busyBefore = busy;
-    const jobs: Promise<void>[] = [...ids].map((id) => refreshCrew(api, id));
+    const jobs: (() => Promise<void>)[] = [...ids].map((id) => () => refreshCrew(api, id));
     if (teamOn() && Date.now() - teamAt >= TEAM_MS) {
       teamAt = Date.now();
-      jobs.push(refreshTeam(api));
+      jobs.push(() => refreshTeam(api));
     }
-    await Promise.allSettled(jobs);
-    if (!stopped) timer = setTimeout(() => void tick(), busy.size > 0 ? BUSY_MS : IDLE_MS);
-  };
-  void tick();
+    return Effect.forEach(jobs, (job) => Effect.ignore(Effect.tryPromise(job)), { concurrency: "unbounded", discard: true }).pipe(
+      Effect.as(busy.size > 0 ? BUSY_MS : IDLE_MS),
+    );
+  });
+  const fiber = runFork(pollLoop(poll));
   return () => {
-    stopped = true;
-    if (timer !== null) clearTimeout(timer);
+    interrupt(fiber);
     watches.delete(api);
   };
 }

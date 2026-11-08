@@ -26,10 +26,14 @@ import {
 const css = readFileSync(join(__dirname, "styles.css"), "utf8");
 
 describe("themes", () => {
-  test("Liquid Glass comes first and is the default", () => {
-    expect(THEMES[0]).toMatchObject({ id: "glass", label: "Liquid Glass", mode: null });
-    expect(defaultPrefs.palette).toBe("glass");
-    expect(themeInfo("no-such-theme").id).toBe("glass");
+  test("Horizon comes first and is the default", () => {
+    expect(THEMES[0]).toMatchObject({ id: "horizon", label: "Horizon", mode: null });
+    expect(defaultPrefs.palette).toBe("horizon");
+    expect(themeInfo("no-such-theme").id).toBe("horizon");
+  });
+
+  test("Liquid Glass stays a choice that follows light or dark", () => {
+    expect(themeInfo("glass")).toMatchObject({ label: "Liquid Glass", mode: null });
   });
 
   test("Apple stays a choice that follows light or dark", () => {
@@ -123,10 +127,11 @@ describe("themes", () => {
 
 describe("aspects and presets", () => {
   const glass = DIRECTIONS.glass.look;
+  const horizon = DIRECTIONS.horizon.look;
 
-  test("Liquid Glass is the default look, and each preset names only known choices", () => {
-    expect(PRESET_IDS).toEqual(["glass", "riso", "stitch"]);
-    for (const k of ASPECT_KEYS) expect(defaultPrefs[k], k).toBe(glass[k]);
+  test("Horizon is the default look, and each preset names only known choices", () => {
+    expect(PRESET_IDS).toEqual(["horizon", "aurora", "dune", "nebula", "glass", "riso", "stitch"]);
+    for (const k of ASPECT_KEYS) expect(defaultPrefs[k], k).toBe(horizon[k]);
     for (const id of PRESET_IDS) {
       const l = DIRECTIONS[id].look;
       expect(themeInfo(l.palette).id).toBe(l.palette);
@@ -136,6 +141,10 @@ describe("aspects and presets", () => {
       expect(TEXTURES.map((x) => x.id)).toContain(l.texture);
       expect(l).toMatchObject({ corners: "auto", translucency: "auto" });
     }
+    expect(horizon).toMatchObject({ palette: "horizon", material: "smoke", process: "spectrum", face: "system", texture: "none" });
+    // Horizon's sisters: the same window over a picture of their own.
+    for (const id of ["aurora", "dune", "nebula"] as const) expect(DIRECTIONS[id].look).toEqual({ ...horizon, palette: id });
+    expect(glass).toMatchObject({ palette: "glass", material: "glass", process: "dither", face: "inter-tight", texture: "none" });
     expect(DIRECTIONS.riso.look).toMatchObject({ palette: "riso", material: "paper", process: "halftone", face: "space-grotesk", texture: "fibre" });
     expect(DIRECTIONS.stitch.look).toMatchObject({ palette: "stitch", material: "felt", process: "stitch", face: "pixelify", texture: "felt" });
   });
@@ -160,13 +169,14 @@ describe("aspects and presets", () => {
     // Half one, half another: the material decides.
     const mixed: Aspects = { palette: "riso", material: "felt", process: "halftone", face: "pixelify", texture: "felt", corners: "auto", translucency: "auto" };
     expect(nearestPreset(mixed)).toBe("stitch");
-    // Nothing in common with any: Liquid Glass.
-    expect(nearestPreset({ palette: "nord", material: "plain", process: "none", face: "system", texture: "none", corners: "round", translucency: "solid" })).toBe("glass");
+    // A tie the material cannot break: Horizon, the default.
+    expect(nearestPreset({ palette: "nord", material: "plain", process: "none", face: "system", texture: "fibre", corners: "round", translucency: "solid" })).toBe("horizon");
   });
 
   test("a theme saved before the aspects becomes the aspects it stood for", () => {
     expect(lookFromPalette("riso")).toEqual(DIRECTIONS.riso.look);
     expect(lookFromPalette("stitch")).toEqual(DIRECTIONS.stitch.look);
+    expect(lookFromPalette("horizon")).toEqual(horizon);
     expect(lookFromPalette("glass")).toEqual(glass);
     // A colourway was Liquid Glass in its colours.
     expect(lookFromPalette("tokyo-night")).toEqual({ ...glass, palette: "tokyo-night" });
@@ -178,13 +188,16 @@ describe("aspects and presets", () => {
     expect(merge({ palette: "riso", accent: "green" })).toMatchObject({ ...DIRECTIONS.riso.look, accent: "green" });
     expect(merge({ palette: "stitch" })).toMatchObject(DIRECTIONS.stitch.look);
     expect(merge({ palette: "tokyo-night" })).toMatchObject({ ...glass, palette: "tokyo-night" });
-    expect(merge({})).toMatchObject(glass);
+    expect(merge({ palette: "glass" })).toMatchObject(glass);
+    // A window with no prefs opens on the default, Horizon.
+    expect(merge({})).toMatchObject(horizon);
     // Once saved with aspects, the palette is the colours alone.
     const mixed = { palette: "riso", material: "glass", process: "dither", face: "inter-tight", texture: "none", corners: "round", translucency: "frosted" };
     expect(merge(mixed)).toMatchObject(mixed);
-    expect(merge({ palette: "riso", material: "glass" })).toMatchObject({ palette: "riso", material: "glass", process: "dither", face: "inter-tight" });
-    // Unknown values fall back.
-    expect(merge({ palette: "riso", material: "wood", process: "etch", corners: 4 })).toMatchObject({ material: "glass", process: "dither", corners: "auto" });
+    // An aspect left out is the default's.
+    expect(merge({ palette: "riso", material: "glass" })).toMatchObject({ palette: "riso", material: "glass", process: "spectrum", face: "system" });
+    // Unknown values fall back to the default's.
+    expect(merge({ palette: "riso", material: "wood", process: "etch", corners: 4 })).toMatchObject({ material: "smoke", process: "spectrum", corners: "auto" });
   });
 
   test("the layout's prefs load with their defaults, and the sidebar's width stays in range", () => {
@@ -197,10 +210,22 @@ describe("aspects and presets", () => {
     });
     expect(merge({ sidebarWidth: 9000 }).sidebarWidth).toBe(420);
     expect(merge({ sidebarWidth: 10 }).sidebarWidth).toBe(208);
-    expect(merge({ sidebarSide: "top", panelDock: "under" })).toMatchObject({ sidebarSide: "left", panelDock: "opposite" });
+    // The threads in a bar across the top; the column's width waits for
+    // the sidebar to come back.
+    expect(merge({ sidebarSide: "top", sidebarWidth: 300 })).toMatchObject({ sidebarSide: "top", sidebarWidth: 300 });
+    expect(merge({ sidebarSide: "bottom", panelDock: "under" })).toMatchObject({ sidebarSide: "left", panelDock: "opposite" });
+    expect(merge({ sidebarSide: 3 }).sidebarSide).toBe("left");
+    // Pages open in the room's place unless the person put them at the side.
+    expect(merge({}).pages).toBe("full");
+    expect(merge({ pages: "side" }).pages).toBe("side");
+    expect(merge({ pages: "window" }).pages).toBe("full");
+    // The newer prefs load side by side, each checked on its own.
+    expect(merge({ sidebarSide: "top", pages: "side", tour: "new" })).toMatchObject({ sidebarSide: "top", pages: "side", tour: "new" });
+    expect(merge({ sidebarSide: "top", pages: 1, tour: "later" })).toMatchObject({ sidebarSide: "top", pages: "full", tour: "done" });
   });
 
   test("each process prints from its own set of pictures", () => {
+    expect(setOf("spectrum")).toBe("horizon");
     expect(setOf("dither")).toBe("glass");
     expect(setOf("none")).toBe("glass");
     expect(setOf("halftone")).toBe("riso");

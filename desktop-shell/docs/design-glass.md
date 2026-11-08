@@ -1,12 +1,14 @@
 # Deck desktop: Liquid Glass
 
-Status: 2026-10-27. This replaces the look in `design-apple.md` for every
+Status: 2026-11-07. This replaces the look in `design-apple.md` for every
 theme. The components and the motion below are the same in every look.
 A look is made of aspects that mix (section 9): the colours (any theme of
 the catalog, Riso's and Stitch's inks among them), the material, the
 picture's process, the display face, the texture, and two knobs, corners
-and translucency. Liquid Glass, the default, Riso and Stitch are presets
-that set every aspect at once. The layout can mirror (section 4).
+and translucency. Horizon (section 10), the default, its sisters Aurora,
+Dune and Nebula, Liquid Glass (section 11), Riso and Stitch are presets
+that set every aspect at once. The layout can
+mirror (section 4).
 
 ## 1. Direction
 
@@ -94,22 +96,24 @@ its parent's radius minus the padding between them.
 ```
 ┌ backdrop ─────────────────────────────────────────────────────────────┐
 │ ┌ sidebar (liquid) ┐ ┌ room (sheet) ──────────────────┐ ┌ panel ─────┐ │
-│ │ ●●●  Deck        │ │ title / project   [⌥ capsules] │ │ (sheet)    │ │
-│ │ Search      ⌘K   │ │ ◉ claude-1 ◉ codex-1  (chips)   │ │ Changes    │ │
-│ │ Inbox        1   │ │ [Conversation | Graph | Changes]│ │ Tasks …    │ │
-│ │ ── threads ──    │ │                                │ │            │ │
-│ │ ▸ Fix lockout ●● │ │   timeline or graph            │ │            │ │
+│ │ ●●●   ▭1 ⌕ ✎ ▯   │ │ title / project   [⌥ capsules] │ │ (sheet)    │ │
+│ │ All projects ▾   │ │ ◉ claude-1 ◉ codex-1  (chips)   │ │ Changes  + │ │
+│ │ deck 3           │ │ [Conversation | Graph | Changes]│ │ Tasks …    │ │
+│ │ ● Docs pass  12h │ │                                │ │            │ │
+│ │ ▢ Fix lockout    │ │   timeline or graph            │ │            │ │
 │ │                  │ │                                │ │            │ │
 │ │                  │ │  ╭ composer (liquid) ────────╮ │ │            │ │
-│ │ ⚙ ▥ ⚇   ● Live  │ │  ╰───────────────────────────╯ │ │            │ │
+│ │ ⚙ ▥ ⚇ ◔ ⊘     ● │ │  ╰───────────────────────────╯ │ │            │ │
 │ └──────────────────┘ └────────────────────────────────┘ └────────────┘ │
 └───────────────────────────────────────────────────────────────────────┘
 ```
 
 - The shell has an 8px gutter (`p-2 gap-2`) showing the backdrop.
 - **Sidebar**: 256px of `liquid`, `rounded-(--panel-radius)`. On a Mac the
-  traffic lights sit inside it, at (18, 19). Its first row is 36px high, so
-  the lights centre on it. Elsewhere that row is 44px.
+  traffic lights sit inside it, at (18, 19). Its first row is 36px high
+  everywhere, so the lights centre on it; it holds the few glyphs the
+  sidebar keeps at hand (section 13). Or the threads run as a 40px bar
+  across the top (`sidebarSide: "top"`, `ui/ThreadBar.tsx`).
 - **Room**: a `sheet` with `rounded-(--sheet-radius)` and
   `overflow-hidden`. The terminal drawer lives inside it, at the bottom.
 - **Toolbar** (inside the room sheet, 48px, no background): the title over
@@ -128,14 +132,17 @@ its parent's radius minus the padding between them.
   amount plus 1.5rem, and the jump pill sits above it.
 - **Side panel**: a `sheet` beside the room, 480px, rounded. Below 1100px
   it floats over the room as `liquid-thick`.
-- **Pages** (Settings, Usage, Team, Inbox): a sheet in the room's place.
-  Groups inside are `rounded-(--sheet-radius) bg-surface-1` with a rim.
+- **Pages** (Settings, Usage, Team, Inbox): a sheet in the room's place,
+  or panes at the side of the conversation (section 13). Groups inside are
+  `rounded-(--sheet-radius) bg-surface-1` with a rim.
 - **Welcome and Connect**: no sheet. Glass cards float straight on the
-  backdrop, which is the first impression and should feel like it.
+  picture, which is the first impression and should feel like it (section
+  12, "The first screens").
 
 **Moving things.** Settings > Appearance > Layout (`ui/LayoutPicker.tsx`)
 draws each choice as the window it makes. The sidebar sits on the left or
-the right (`sidebarSide`); the side panel docks on the side opposite it,
+the right, or the threads run in a bar across the top (`sidebarSide`:
+`"left" | "right" | "top"`); the side panel docks on the side opposite it,
 beside it (between it and the room), or floats over the room away from it
 at any width (`panelDock`). The Shell writes `data-sidebar` and
 `data-dock` on `.shell`, and styles.css orders the parts (`order`, then
@@ -149,7 +156,14 @@ tenth; the type keeps its size and the Mac's title row stays 36px. On a
 Mac whichever part sits at the top left clears the traffic lights:
 the sidebar itself, or the room's toolbar or the panel's tabs through the
 Shell's `data-lights`. A right sidebar sees the backdrop mirrored, so the
-band held back for it follows it.
+band held back for it follows it. With the top bar `.shell` is a column
+(the bar, then the room), the panel docks as for a left sidebar (opposite
+on the right, beside on the left), the width row and the grip go away
+(the width waits for the column to come back), the bar clears the traffic
+lights itself (78px at its start), and the picture's clip follows it:
+behind the bar's glass alone, or in smoked glass the whole room under the
+bar (`--topbar-h`). The Pages row (`pages`: `"full" | "side"`) says where
+the sidebar's Settings, Usage, Team and Inbox buttons open them.
 
 ## 5. Components
 
@@ -379,10 +393,11 @@ colours.
   riso keeps a 20px press margin and its blocks follow the subject, right
   of the sidebar; the stitch's cards and dice keep off the sidebar's band.
 - **On the first screens.** The Welcome and the connect screen print the
-  picture at the size of their plate (`ui/ArtFigure.tsx`), as a print on
-  the page, with its credit under it. Liquid Glass hangs its true duotone
-  in either mode. The window's backdrop hides there, so type never sits on
-  the picture.
+  backdrop's picture themselves (`ui/ArtFigure.tsx`), full bleed behind
+  their glass, with its credit on a chip in the corner. Liquid Glass hangs
+  its true duotone in either mode. The window's backdrop hides there. The
+  type sits on a scrim, not on the bare picture (section 12, "The first
+  screens").
 - **Never in the room.** The room's sheet, the chat, the composer and the
   diff stay opaque and plain. The pages' small plates (empty Inbox, Team,
   Usage) take each direction's inks (`--plate-lo`, `--plate-hi`).
@@ -410,3 +425,275 @@ any process.
 `ATTRIBUTION.md`, add it to `PICTURES` with its crop and subject, and to a
 set. Ship JPG or PNG: app:// names them (`src/main/mime.ts`), and it sends
 `nosniff`.
+
+## 10. Horizon
+
+Horizon is the default look since 2026-11-07. Where Liquid Glass floats
+panels on a backdrop, Horizon is a dark window with one picture in it: a
+flush sidebar, and the room open onto a planet's lit limb, printed in red,
+green and blue dots. The new-thread screen is its home: the composer and a
+few cards of smoked glass over the picture.
+
+| Aspect | Horizon |
+|---|---|
+| Colours (`horizon`) | near-black planes (`--canvas` `#111113`, `--sidebar` `#141415`), quiet greys, one soft blue (`#5b8def`); in light, white planes and a deeper blue |
+| Material (`smoke`) | smoked glass: dark, 12px blur, a 9% rim, no sheen; 10 to 12px corners |
+| Process (`spectrum`) | each of red, green and blue dithered on its own into four steps, at 1.5px, half Bayer and half noise, with a faint floor so the shadows speckle (`backdrop/spectrum.ts`) |
+| Picture | *Horizon*, drawn for Deck by `scripts/horizon-art.py`: space and blue air above the limb, a white-gold line of sun on it, the night side lit orange and red below |
+| Face | the UI's own (Geist) |
+
+**The window.** No gutter: the sidebar runs flush to the window's edge, an
+opaque column of `--sidebar` with a hairline on its inner edge. The
+picture fills the rest of the window (`.backdrop`'s clip follows
+`--sidebar-w`), behind the room itself.
+
+**Veils, not sheets.** The room's panes and the pages are clear, with a
+veil under their content (`--room-veil`, the canvas at 86% and a 22px
+blur, as a `::before` layer, so the composer's and the menus' own glass
+still reach the picture). In a thread the picture is a soft glow behind
+the words, never under them. The new-thread screen has no veil.
+
+**Home.** Under the composer (`ui/Home.tsx`), five cards of `liquid`
+glass on a four-column grid, two on a narrow pane:
+
+| Card | Shows | From |
+|---|---|---|
+| Activity | 24 weeks of days, one blue from quiet to full | turns per day (the usage record's heat); a paired Deck counts threads by the day they were last touched |
+| Recent threads | the three last touched, with a status dot and how long ago | the thread list |
+| Usage | the plan window nearest its limit and when it resets, or the last 30 days' spend | the usage record |
+| In progress | threads working (a pulsing dot) or waiting on you (the shield) | the thread list |
+| This month | threads and turns so far, against last month | the thread list and the usage record |
+
+A paired Deck keeps no usage record here, and the Usage card says so. The
+question over the composer keeps its words, with the Deck mark before it
+as a wordmark.
+
+**Light.** The paper is the dots' peak, so bare paper prints clean and the
+limb is a pastel arc of dots on it.
+
+**Sisters.** Aurora (green and violet curtains over a ridge, a green
+accent), Dune (sand ridges under a low sun, amber) and Nebula (lit gas
+over deep stars, violet) are Horizon's window over a picture of their own,
+drawn by `scripts/scene-art.py`. No two looks print the same picture
+(`SPECTRUM_PICTURES` in `backdrop/inks.ts`, and its test).
+
+**Choosing.** Each preset's card in Settings > Appearance is its picture
+with the window in miniature over it, in its own colours (`MiniWindow` in
+`ui/ThemeCard.tsx`): the flush sidebar, the composer and the home's cards
+for smoked glass; the floating panels, made of the material, for the
+others. The live preview over the cards draws the same home for a smoked
+look (`SmokePreview` in `ui/LookEditor.tsx`).
+
+**Agents' names.** The window shows an agent as people say it: "Claude",
+and "Claude 2" for the second of its kind (`agentName.ts`), whatever its
+id ("claude", "claude2", or "claude-1" from an older Deck). The id stays
+what @mentions, lanes, tests and the engine use.
+
+## 11. Liquid glass
+
+The Liquid Glass material bends what is behind it, as a thick pane does at
+its rim, and moves like a liquid.
+
+**The lens** (`liquidGlass.ts`). Each glass panel (`.liquid`,
+`.liquid-thick`, `.liquid-clear`, `.material`) gets an SVG filter drawn for
+its own size and corner radius: a displacement map that is flat in the
+middle and, across a rim up to 32px wide, reads the backdrop from further
+inside, most at the edge (a circle's profile, 1 − √(1 − t²)). Red, green
+and blue bend by 110%, 100% and 90%, so the rim splits the faintest
+spectrum. CSS reads the filter from `--lens` (an unregistered-inherit
+`@property`), before the blur: `backdrop-filter: var(--lens,) blur()
+saturate()`. A panel the runtime has not reached, and every panel with
+Reduce transparency, is plain frosted glass. Filters are cached per size,
+96 at most; a panel that is resizing waits 90ms to settle first.
+
+**The material.** Clearer than before (a 30% tint, a 4px blur, 18px for
+menus and dialogs, 14px for the sidebar over the picture), with light on
+the top-left edge, fainter on the bottom-right, a glow inside the upper
+lip and a shade in the lower (`--glass-inset`).
+
+**Motion.** Only scale and opacity move, on `--spring` (a damped spring as
+`linear()`), and reduced motion stops all of it.
+
+- The segmented controls' pill is one shape the track draws
+  (`.seg-track::before`). Picking another segment stretches it across both,
+  squashing it a little, and it settles on the new one with a spring. This
+  is in every look.
+- In Liquid Glass, a glass button gives under a press (0.9) and springs
+  back; the send and tinted buttons swell a little under the pointer.
+- In Liquid Glass, menus, popovers, dialogs and toasts bloom open from a
+  drop (`liquid-bloom`): squashed, a small overshoot, then still.
+
+## 12. The mode menu, the lead's control, the effort dial and the first screens
+
+**The mode menu** (`ui/ModePicker.tsx`). The session's mode (Plan, Ask,
+Yolo) is a word, not a dial: a pill in the composer's bar with the mode's
+icon, its name and a chevron (`.mode-picker`, `data-mode`). A click opens
+a `Popover` of `PickRow`s, the same rows and keys as the agent picker:
+each mode's icon, name and what it does, the current one checked. Yolo
+asks first; a room in yolo keeps the rainbow border on the pill, and the
+amber flash (`[data-yolo-flash]`) stands in for the shockwave.
+
+**The lead's control** (`ui/LeadPicker.tsx`, "The lead's control" in
+styles.css), after T3 Code's single model-and-effort control
+(`apps/web/src/components/chat/ComposerModelEffort.tsx` there). The agent
+the person talks to and its effort are one capsule on a hairline
+(`.lead-control`; clear glass in Liquid Glass): the agent's chip (its mark
+in its hue, its name, the model when the bar has room, the status dot)
+and, after a hairline, the effort dial. There is no chevron.
+
+- A new agent or model slides up into the chip (`.lead-swap`, 460ms on
+  `--spring`, from 60% below, faded and a little blurred), and the
+  capsule eases from its old width to its new one on the same spring (a
+  Web Animation, clipped while it runs).
+- The chip opens the agent picker, which rises out of the bar from the
+  chip's corner (`.lead-pop`: from 94% and 6px lower, on the spring; Liquid
+  Glass keeps its bloom).
+- In the agent picker the model's efforts dock beside the models, as T3
+  Code docks its reasoning column: a 40px dial that turns to the level
+  picked (drag it or scroll over it), then each level by name (Default,
+  None, Minimal, Low, Medium, High, Extra high, Max). With a docked column
+  the models are one column; without one, two.
+
+**The effort dial** (`ui/EffortDial.tsx`, the geometry in `effort.ts`, "The
+effort dial" in styles.css). The lead's reasoning effort shows with no
+word, as a dial attached to the end of the chip:
+
+- A 20px ring of segments round a flat cap. The ring sweeps 270°, its gap
+  at the bottom; one segment per level the model takes (the catalog's
+  list, lightest first; an off level such as `none` is no segment; seven
+  at most), 14° apart, 1.75 wide on an 8.25 radius.
+- Segments are lit up to the level in the agent's hue (`--hue`, else
+  `--primary`); the rest are the text's colour at 20% (16% in light). The
+  cap is the text at 9% with a `--hairline-strong` rim; its pointer is the
+  text's colour and stands at the middle of the level's segment. The
+  agent's own level (`""`, `data-auto`) rests the pointer in the gap, faint,
+  over a ring at 34%: a dial at rest, not "off". An off level rests it just
+  before the first segment.
+- Turning spins the cap (`rotate`, 680ms on `--spring`, so it overshoots a
+  little and settles) and lights or darkens the segments one after another
+  in the direction it turned (`--d`, 55ms apart), so the light follows the
+  pointer. Default to Max is a long clockwise turn round the gap. Reduced
+  motion holds it still.
+- Drag it (right or up turns it up, 14px a level), scroll over it (a
+  wheel's notch a level) or use the arrows while it has the focus (Home
+  rests it at the default, End turns it all the way). It shows the level at
+  once and applies it (`setModel` with the lead's model) when the drag ends
+  or once the wheel and keys have rested 450ms. A click opens the levels as
+  a short column ("Effort" over the model's name): Default, then each level
+  with a 16px dial and its name, the current one checked, applied at once.
+- The name lives in the `title`, the `aria-label` and an `sr-only` span
+  ("Reasoning effort: High"). A model that takes no effort shows no dial;
+  one the catalog lists without levels but that runs at one is drawn on
+  Claude Code's scale (low to max).
+
+**The first screens.** The Welcome ("One deck for all your agents") and
+the connect screen ("What should we work on?") are the home's family, in
+every look (`FirstFrame` in `ui/Welcome.tsx`):
+
+- The theme's picture fills the window, the same on both screens, so Pair
+  on the Welcome changes the cards and not the room.
+- A scrim (`.first-scrim`) pools the canvas behind the column, about 84%
+  at its middle and 22% at the edges, so the picture shows whole round
+  the column. Under the column the dots soften through a 5px blur that
+  fades out by a mask, so a hard dither never fights the type. Bands of
+  the canvas sit under the top strip and the credit.
+- One centred column, 44rem at most: the Deck mark, the question in two
+  tones (its quiet half in the muted colour, with a soft halo of the
+  canvas), a line on what Deck is, and on the Welcome a sample message as
+  a capsule of glass.
+- Under it, two `ActionCard`s side by side (one column below 640px): Open
+  a folder or Add project, and Pair with a Deck. The primary one wears
+  the accent on its rim and in its icon.
+- Then cards of `liquid` glass: the agents Deck found, the pairing form,
+  the recent folders, and any notice or start error.
+- Liquid Glass frosts these cards more here (16px, a 55% tint), as it
+  does the sidebar. The picture's credit is a chip of the canvas in the
+  bottom right.
+- The column scrolls when the window is short. Under 760px tall, the mark
+  and the gaps shrink.
+
+## 13. The sidebar, the top bar and pages at the side
+
+After T3 Code's Obsidian theme, the sidebar is calm: the threads and little
+else (`ui/Sidebar.tsx`, the "sidebar" section of styles.css).
+
+- **Header** (36px, the title bar's row): four faint glyphs at its end:
+  the inbox with its count in the warning's colour (no badge), Search, New
+  thread and Hide the sidebar. Nothing else floats there.
+- **Projects**: a quiet heading (`All projects ▾`, the filter, with Add
+  project on hover), then each project's name and count in 11px faint type
+  (no tile; its New thread and Close on hover).
+- **Threads**: plain grey rows of 13px type, about 30px tall (`h-7.5`), 1px
+  apart, groups 8px apart. The open thread is a card of soft grey (8% of
+  the text colour) with a faint rim (`--row-rim`), radius `--row-radius`
+  (12px in smoked glass, 10px elsewhere). A row's state is a dot at its
+  leading edge; its age, faint, at its end.
+- **Foot** (40px, no hairline): Settings, Usage, Team, the bell and Close
+  project as faint glyphs, and the connection as a dot alone.
+- In smoked glass the column is darker than the room, nearly black in the
+  dark mode, and one hairline parts it from the room.
+
+**The top bar** (`ui/ThreadBar.tsx`). The same `nav` ("Threads") as a 40px
+bar across the window: the project switcher, the threads as chips (a
+state's dot, the title, the open one the soft card), a "+" for a new
+thread and a menu of every thread (the archived too), then Search, the
+inbox and the foot's controls, and Hide. The chips scroll sideways (the
+wheel scrolls them too) and fade at an edge with more behind it. With
+Settings open the chips give way to its sections.
+
+**Pages at the side.** Settings, Usage, Team and the inbox are panes the
+room's layout can hold (`page:<name>` in `layout/tree.ts`, `openPage`):
+the first opens in a stack of its own along the room's edge on the panel's
+side, the next joins it as a tab. The pages' tabs, and the side panel's,
+end in a "+" that opens another page; the pages' stack has a button that
+pops the page to full size, and a full page has one in its top right
+corner that puts it at the side. At the side a page keeps its controls but
+leaves its name to its tab, Settings picks its section from a strip of its
+own, and an empty page stands its plate over its words. Full size stays
+the default from the sidebar; Settings > Appearance > Layout > Pages makes
+the sidebar's buttons open them at the side instead (while a room shows).
+
+## 14. The starter tour
+
+A skippable walk through the window for a new person (`ui/Tour.tsx`, the
+steps and their logic in `tour.ts`), as coach marks in the window's own
+material.
+
+**Steps.** The Welcome has four: what Deck is, Open a folder, Pair with a
+Deck, and the agent CLIs. A project's window has ten: a look around, the
+threads (`nav[aria-label="Threads"]`, the sidebar or the top bar), the
+composer and its `$agent`, `@` and `#` mentions, the mode menu (Plan / Ask
+/ Yolo), the effort dial (`.effort-picker`), the home cards (`section.home`), Conversation / Graph
+(`.room-views`), the diff and panels (`.panel-toggles`), the palette
+(⌘/Ctrl+K) and Settings › Appearance (the Settings button in the sidebar's
+foot, or in the top bar's tools). Each finds its target by selector when
+it shows (a selector can name it in each layout, and the first match on
+screen wins); a step whose target is not on screen is passed over (the
+home cards in an open thread, the views on a new one, the effort dial for
+a model that takes none). The mode menu lives only in a thread, so its step
+shows in the middle without it.
+
+**Look.** A dim veil with a hole cut round the target (one element whose
+spread shadow is the veil), the hole's edge a ring of the accent that
+breathes, and a card of `liquid-thick` glass on `--radius`: the count,
+the title, a line or two, the dots (the current one a capsule of the
+accent), Skip, Back and Next. The card sits below the target, else above,
+else beside it, else in the middle, never past the window's edges, and
+follows the target as the window resizes. A step with no target shrinks
+the hole to a point under the card. Hole and card glide between steps on
+`--ease`; reduced motion holds them still.
+
+**Input.** The veil takes no pointer, only the card does: the window stays
+usable, and Open a folder mid-tour opens the folder (the tour then goes on
+with the project's steps). ← and → step, Esc leaves, Next holds the focus;
+while the person types in a field the keys are theirs.
+
+**When.** The pref `tour` is `"new"` in a new window and `"done"` once the
+tour is finished or skipped (prefs saved before it existed load as done).
+It starts by itself only on a real first run: never when
+`navigator.webdriver` is set or the app was launched with a remote
+debugging port (`AppInfo.automated`), so the end-to-end tests click through
+an untouched window. The Welcome's part ends in Got it and hands over to the
+project's when a project opens. The palette's Show the tour and Settings ›
+General › Getting started start it again; starting it closes the page in
+the room's place.

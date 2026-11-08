@@ -3,6 +3,8 @@
 // person's own wallpaper. Vite bundles each file, so it loads under
 // img-src 'self'.
 
+import type { PresetId } from "../themes";
+
 export interface Picture {
   id: string;
   url: string;
@@ -28,6 +30,40 @@ const MET = "The Metropolitan Museum of Art, CC0";
 
 // Each URL is a literal, so Vite finds and bundles the file.
 export const PICTURES: readonly Picture[] = [
+  // Horizon: a planet's lit limb, drawn for Deck (scripts/horizon-art.py).
+  {
+    id: "horizon",
+    url: new URL("../art/horizon-deck.jpg", import.meta.url).href,
+    credit: "Horizon, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.75,
+    ay: 0.35,
+  },
+  // Its sisters, drawn for Deck too (scripts/scene-art.py).
+  {
+    id: "aurora",
+    url: new URL("../art/aurora-deck.jpg", import.meta.url).href,
+    credit: "Aurora, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.7,
+    ay: 0.4,
+  },
+  {
+    id: "dune",
+    url: new URL("../art/dune-deck.jpg", import.meta.url).href,
+    credit: "Dune, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.7,
+    ay: 0.5,
+  },
+  {
+    id: "nebula",
+    url: new URL("../art/nebula-deck.jpg", import.meta.url).href,
+    credit: "Nebula, drawn for Deck",
+    source: "Deck, CC0",
+    ax: 0.65,
+    ay: 0.45,
+  },
   // Liquid Glass: scenes with a sky, at dusk in its inks.
   {
     id: "alps",
@@ -167,7 +203,11 @@ export const PICTURES: readonly Picture[] = [
 
 // Each art direction's own set, its default first. The picker offers the
 // set of the theme on screen; any picture prints through any process.
-export const SETS: Record<"glass" | "riso" | "stitch", readonly string[]> = {
+export const SETS: Record<PresetId, readonly string[]> = {
+  horizon: ["horizon", "aurora", "dune", "nebula", "xdf", "clouds"],
+  aurora: ["aurora", "horizon", "dune", "nebula"],
+  dune: ["dune", "horizon", "aurora", "nebula"],
+  nebula: ["nebula", "horizon", "aurora", "dune"],
   glass: ["alps", "yosemite", "hira-snow", "clouds", "sete", "xdf"],
   riso: ["allium", "great-wave", "irises", "plum-moon"],
   stitch: ["canyon", "nagasaki", "red-fuji", "shower-bridge", "kintai"],

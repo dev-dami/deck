@@ -1,4 +1,5 @@
 import type { AgentLine, ChangedFile, Message, Mode, Theme } from "@web/protocol";
+import { agentName, atName } from "../agentName";
 import { kindMark } from "@web/theme";
 import { type Chunk, groupParts, isNearBottom } from "@web/transcript";
 import { toMillis } from "@web/time";
@@ -617,7 +618,7 @@ const ActionsRow = memo(function ActionsRow({ g, running, mark }: { g: ActionGro
             {mark}
           </span>
         )}
-        <span className="actions-who shrink-0 font-medium text-(--hue)">@{g.agent}</span>
+        <span className="actions-who shrink-0 font-medium text-(--hue)">{atName(g.agent)}</span>
         <span aria-hidden className="shrink-0 text-faint">
           ·
         </span>
@@ -756,7 +757,7 @@ function AgentTurn({
       <header className="msg-head flex h-6 items-center gap-2">
         <span className="msg-index inline-flex min-w-0 items-baseline gap-1.5">
           <AgentMark mark={mark} working={running} />
-          <span className="msg-who truncate font-semibold text-(--hue) text-[13px]">{agent}</span>
+          <span className="msg-who truncate font-semibold text-(--hue) text-[13px]">{agentName(agent)}</span>
           <AgentRole role={agentRole(agent, roster)} className="text-xs" />
         </span>
         <time className="text-2xs text-faint tabular-nums opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
@@ -893,7 +894,7 @@ function SubTurn({
             {mark}
           </span>
         )}
-        <span className="sub-who shrink-0 font-medium font-mono text-(--hue) text-[13px]">{name}</span>
+        <span className="sub-who shrink-0 font-medium font-mono text-(--hue) text-[13px]">{agentName(name)}</span>
         {spawned && <span className="sub-kind shrink-0 text-faint text-xs">{kind}</span>}
         {line !== "" && (
           <span className="sub-task min-w-0 shrink truncate text-muted-foreground" title={line}>
@@ -1004,7 +1005,7 @@ function AskRow({ m, ask, roster, theme }: { m: Message; ask: FileAsk; roster: A
         <span aria-hidden className="font-mono text-2xs">
           {kindMark(theme, kind) || "●"}
         </span>
-        @{name}
+        {atName(name)}
       </span>
     );
   };
@@ -1133,7 +1134,7 @@ export function HandoffCard({ from, h, roster, theme }: { from: string; h: Hando
               <span aria-hidden className="shrink-0">
                 {kindMark(theme, kind) || "●"}
               </span>
-              <span className="truncate">{name}</span>
+              <span className="truncate">{agentName(name)}</span>
             </span>
           );
         })}
@@ -1188,7 +1189,7 @@ function EmptyRoom({ roster, theme }: { roster: AgentLine[]; theme: Theme | null
               <span aria-hidden className="font-mono text-(--hue) text-[12.5px]">
                 {kindMark(theme, l.kind) || "●"}
               </span>
-              <span className="text-(--hue)">{l.name}</span>
+              <span className="text-(--hue)">{agentName(l.name)}</span>
               <AgentRole role={l.role ?? ""} className="text-xs" />
             </span>
           ))}

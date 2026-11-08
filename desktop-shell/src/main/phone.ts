@@ -1,6 +1,8 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { Data, Effect } from "effect";
 import type { PhoneOutcome, PhoneState } from "../shared/bridge";
+import { runPromise } from "../shared/effect";
 
 // The phone link is `deck mobile connect --json`: the engine starts the
 // relay and daemon, shares a folder and mints the pairing code, and this
@@ -26,20 +28,25 @@ export type Run = (args: string[]) => Promise<RunResult>;
 // Starting the relay waits up to 45 s for it, then the daemon up to 45 s more.
 const RUN_TIMEOUT_MS = 120_000;
 
-export function execRun(deck: string, env: NodeJS.ProcessEnv): Run {
-  return (args) =>
-    new Promise((resolve) => {
-      execFile(
-        deck,
-        args,
-        { env, timeout: RUN_TIMEOUT_MS, windowsHide: true, maxBuffer: 1 << 20 },
-        (err, stdout, stderr) => {
-          const code = err === null ? 0 : typeof err.code === "number" ? err.code : null;
-          resolve({ stdout: String(stdout), stderr: String(stderr) || (code === null && err !== null ? err.message : ""), code });
-        },
-      );
+// Runs deck with args. execFile kills it at RUN_TIMEOUT_MS; so does
+// interrupting the effect. It never fails: a run that could not start has
+// code null and says why on stderr.
+export function execRunEffect(deck: string, env: NodeJS.ProcessEnv, args: string[]): Effect.Effect<RunResult> {
+  return Effect.async<RunResult>((resume) => {
+    const child = execFile(deck, args, { env, timeout: RUN_TIMEOUT_MS, windowsHide: true, maxBuffer: 1 << 20 }, (err, stdout, stderr) => {
+      const code = err === null ? 0 : typeof err.code === "number" ? err.code : null;
+      resume(Effect.succeed({ stdout: String(stdout), stderr: String(stderr) || (code === null && err !== null ? err.message : ""), code }));
     });
+    return Effect.sync(() => void child.kill());
+  });
 }
+
+export function execRun(deck: string, env: NodeJS.ProcessEnv): Run {
+  return (args) => runPromise(execRunEffect(deck, env, args));
+}
+
+// Why the phone link did not do what was asked, in the window's words.
+export class PhoneFailed extends Data.TaggedError("PhoneFailed")<{ readonly message: string; readonly needsRelayDir: boolean }> {}
 
 type Obj = Record<string, unknown>;
 const obj = (v: unknown): Obj => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Obj) : {});
@@ -110,18 +117,28 @@ export class PhoneLink implements PhoneService {
     private readonly relayHint: string | null = null,
   ) {}
 
-  private async go(args: string[]): Promise<PhoneOutcome> {
-    if (this.run === null) {
-      return { ok: false, message: "This install of Deck is missing its engine. Reinstall Deck.", needsRelayDir: false };
-    }
-    const r = await this.run(["mobile", "connect", "--json", ...args]);
-    if (r.code === 0) {
+  private goEffect(args: string[]): Effect.Effect<PhoneState, PhoneFailed> {
+    const run = this.run;
+    return Effect.gen(function* () {
+      if (run === null) return yield* new PhoneFailed({ message: "This install of Deck is missing its engine. Reinstall Deck.", needsRelayDir: false });
+      const r = yield* Effect.promise(() => run(["mobile", "connect", "--json", ...args]));
+      if (r.code !== 0) {
+        const message = failureMessage(r.stderr, r.code);
+        return yield* new PhoneFailed({ message, needsRelayDir: needsRelayDir(message) });
+      }
       const phone = parsePhone(r.stdout);
-      if (phone !== null) return { ok: true, phone };
-      return { ok: false, message: "Deck answered in a form this app does not understand. Update Deck.", needsRelayDir: false };
-    }
-    const message = failureMessage(r.stderr, r.code);
-    return { ok: false, message, needsRelayDir: needsRelayDir(message) };
+      if (phone === null) return yield* new PhoneFailed({ message: "Deck answered in a form this app does not understand. Update Deck.", needsRelayDir: false });
+      return phone;
+    });
+  }
+
+  private go(args: string[]): Promise<PhoneOutcome> {
+    return runPromise(
+      Effect.match(this.goEffect(args), {
+        onFailure: (e): PhoneOutcome => ({ ok: false, message: e.message, needsRelayDir: e.needsRelayDir }),
+        onSuccess: (phone): PhoneOutcome => ({ ok: true, phone }),
+      }),
+    );
   }
 
   status(): Promise<PhoneOutcome> {

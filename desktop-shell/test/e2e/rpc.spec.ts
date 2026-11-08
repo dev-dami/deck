@@ -130,6 +130,56 @@ test("the agent pickers list every agent once, keep it, and refresh by hand", as
   expect(fake.modelRefreshes).toBe(1);
 });
 
+test("the composer shows the lead's effort as a dial that turns, and a click picks the level", async ({ page }) => {
+  await openFolder(page);
+  await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
+  await expect(page.locator('[data-agent="codex-1"].msg')).toBeVisible();
+  // No word in the bar: segments lit to the level, its name for the tooltip.
+  const dial = page.locator(".effort-picker");
+  await expect(dial).toHaveAttribute("data-effort", "high");
+  await expect(dial).toHaveAttribute("title", "Reasoning effort: High");
+  await expect(dial.locator(".effort-dial")).toHaveAttribute("data-lit", "3");
+  await expect(page.locator(".lead-control")).not.toContainText("high");
+  await dial.click();
+  const levels = page.getByRole("menu", { name: "Reasoning effort" });
+  await expect(levels.getByRole("menuitemradio")).toHaveText(["Default", "Low", "Medium", "High", "Extra high", "Max"]);
+  await expect(levels.getByRole("menuitemradio", { name: "High", exact: true })).toBeFocused();
+  await levels.getByRole("menuitemradio", { name: "Max" }).click();
+  await expect(levels).toHaveCount(0);
+  await expect.poll(() => fake.deck.modelSets.at(-1)).toEqual({ kind: "claude", model: "", effort: "max" });
+  await expect(dial).toHaveAttribute("data-effort", "max");
+  await expect(dial.locator(".effort-dial")).toHaveAttribute("data-lit", "5");
+
+  // The arrows turn it at once and apply once it rests; Home rests it at the default.
+  const sets = fake.deck.modelSets.length;
+  await dial.focus();
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(dial).toHaveAttribute("data-effort", "high");
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("high");
+  expect(fake.deck.modelSets.length).toBe(sets + 1);
+  await page.keyboard.press("Home");
+  await expect(dial.locator(".effort-dial")).toHaveAttribute("data-auto", "");
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("");
+
+  // The wheel turns it up, a notch a level.
+  await dial.hover();
+  await page.mouse.wheel(0, -100);
+  await expect(dial).toHaveAttribute("data-effort", "low");
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("low");
+
+  // A drag to the right turns it up and opens nothing.
+  const box = (await dial.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.move(box.x + box.width / 2 + 32, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await expect(dial).toHaveAttribute("data-effort", "high");
+  await expect(levels).toHaveCount(0);
+  await expect.poll(() => fake.deck.modelSets.at(-1)?.effort).toBe("high");
+});
+
 test("$pi starts a pi lane, and its picker offers the models pi has a key for", async ({ page }) => {
   await openFolder(page);
   await sidebar(page).getByRole("button", { name: "Fix the pairing lockout", exact: true }).click();
@@ -145,7 +195,7 @@ test("$pi starts a pi lane, and its picker offers the models pi has a key for", 
   await expect(menu.getByRole("menuitemradio", { name: /Coder/ })).toBeVisible();
   await menu.getByRole("menuitemradio", { name: /Reasoner/ }).click();
   const efforts = menu.getByRole("group", { name: "Reasoning effort" });
-  await expect(efforts.getByRole("menuitemradio")).toHaveText(["Default", "none", "low", "medium", "high"]);
+  await expect(efforts.getByRole("menuitemradio")).toHaveText(["Default", "None", "Low", "Medium", "High"]);
   await efforts.getByRole("menuitemradio", { name: "medium" }).click();
   await menu.getByRole("menuitem", { name: "Apply" }).click();
   const roster = () => fake.deck.invoke("roster.get", { session_id: "ses_main" }) as Array<{ id: string; model?: string }>;
@@ -922,10 +972,10 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(claude).toHaveAttribute("data-status", "working");
   await expect(claude.locator(".lane-ring")).toBeVisible();
   await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-leases')).toHaveText("1");
-  // A spawned agent's lane says who spawned it.
-  await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-parent')).toHaveText("by @claude-1");
+  // A spawned agent's lane says who spawned it, by the name people say.
+  await expect(lanes.locator('[data-lane="agent:codex-sub"] .lane-parent')).toHaveText("by @Claude");
   await expect(lanes.locator('[data-lane="agent:codex-1"] .lane-parent')).toHaveCount(0);
-  await expect(page.locator(".room-index")).toContainText("ain");
+  await expect(page.locator(".room-index > span").last()).toHaveText("main");
 
   // A click on codex-1 shows its lane alone and opens its popover.
   await lanes.locator('[data-lane="agent:codex-1"]').click();
@@ -933,8 +983,8 @@ test("lane strip: the people in the room, a lane filter and an agent's popover",
   await expect(page.locator('[data-agent="claude-1"].msg')).toHaveCount(0);
   await expect(page.locator(".msg-user")).toHaveCount(0);
   const pop = page.getByRole("menu", { name: "codex-1" });
-  await expect(pop.getByRole("menuitem", { name: "Stop codex-1" })).toBeDisabled();
-  await pop.getByRole("menuitem", { name: "Steer codex-1" }).click();
+  await expect(pop.getByRole("menuitem", { name: "Stop Codex" })).toBeDisabled();
+  await pop.getByRole("menuitem", { name: "Steer Codex" }).click();
   await expect(composer(page)).toHaveValue("$codex-1 ");
   await expect(composer(page)).toBeFocused();
 
@@ -958,7 +1008,7 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
   const lanes = page.getByRole("toolbar", { name: "Lanes" });
   for (const name of ["codex-2", "codex-3"]) {
     const lane = lanes.locator(`[data-lane="agent:${name}"]`);
-    await expect(lane.locator(".lane-parent")).toHaveText("by @claude-1", { timeout: 15_000 });
+    await expect(lane.locator(".lane-parent")).toHaveText("by @Claude", { timeout: 15_000 });
     await expect(page.locator(`[data-agent="${name}"].msg`).last()).toContainText("write the limiter tests");
   }
   // The brief shows as claude's hand-off card to each.
@@ -971,7 +1021,7 @@ test("an agent told to spin up agents spawns them: lanes under it, its brief as 
   // The spawned lane's popover links to its spawner's lane.
   await lanes.locator('[data-lane="agent:codex-2"]').click();
   const pop = page.getByRole("menu", { name: "codex-2" });
-  await pop.getByRole("menuitem", { name: "Spawned by @claude-1" }).click();
+  await pop.getByRole("menuitem", { name: "Spawned by @Claude" }).click();
   await expect(lanes.locator('[data-lane="agent:claude-1"]')).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator('[data-agent="codex-2"].msg')).toHaveCount(0);
   await expect(page.locator('[data-agent="claude-1"].msg .handoff[aria-label="claude-1 to codex-3"]')).toBeVisible();

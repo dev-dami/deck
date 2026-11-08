@@ -1,6 +1,6 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import type { ProjectApi } from "../project";
-import { PANELS, type Panel } from "../ui";
+import { type Page, PANELS, type Panel } from "../ui";
 import { closeTerm, focusTerm, pruneTerms } from "../ui/Terminal";
 import type { LayoutMenuProps } from "./LayoutMenu";
 import { useLayout, type LayoutControl } from "./store";
@@ -10,9 +10,13 @@ import {
   CONVERSATION,
   dock,
   type Edge,
+  isPage,
   isPanel,
   isTerminal,
   type Layout,
+  openPage as openPageIn,
+  pageId,
+  pageOf,
   type PaneId,
   presetShows,
   removePane,
@@ -49,6 +53,10 @@ export interface RoomLayout {
   panelAction: (p: Panel | null) => void;
   togglePanel: () => void;
   toggleTerminal: () => void;
+  // A page (Settings, Usage, Team, the inbox) at the side, and whether one
+  // is open there.
+  openPage: (p: Page) => void;
+  pageOpen: (p: Page) => boolean;
   // What the header shows as on.
   panelShown: boolean;
   diffShown: boolean;
@@ -67,6 +75,8 @@ export function useRoomLayout({
   available,
   inputRef,
   keys,
+  pagesOn = () => true,
+  onFullPage = () => {},
 }: {
   // The project's key: a layout of its own is kept under it.
   project: string;
@@ -83,6 +93,10 @@ export function useRoomLayout({
   inputRef: RefObject<HTMLTextAreaElement | null>;
   // The keys listen while the room shows.
   keys: boolean;
+  // The pages that may show at the side (the Team page only with the team
+  // on), and a page leaving the side to take the room's place.
+  pagesOn?: (p: Page) => boolean;
+  onFullPage?: (p: Page) => void;
 }): RoomLayout {
   const ctl = useLayout(project, side);
   const { layout, edit } = ctl;
@@ -90,9 +104,14 @@ export function useRoomLayout({
   const [ring, setRing] = useState(false);
 
   const visible = useCallback(
-    (p: PaneId) =>
-      p === CONVERSATION || (isTerminal(p) ? api !== undefined && terminal : isPanel(p) && panelsOn && panel !== null && available(p) && !layout.hidden.includes(p)),
-    [api, terminal, panelsOn, panel, available, layout.hidden],
+    (p: PaneId) => {
+      if (p === CONVERSATION) return true;
+      if (isTerminal(p)) return api !== undefined && terminal;
+      const page = pageOf(p);
+      if (page !== null) return pagesOn(page) && !layout.hidden.includes(p);
+      return isPanel(p) && panelsOn && panel !== null && available(p) && !layout.hidden.includes(p);
+    },
+    [api, terminal, panelsOn, panel, available, layout.hidden, pagesOn],
   );
   const shown = shownPanes(layout, visible);
   const terms = terminalsOf(layout.root);
@@ -153,12 +172,28 @@ export function useRoomLayout({
   };
   const toggleTerminal = () => (terminal ? setTerminal(false) : showTerminal());
 
+  const openPage = (p: Page) => {
+    edit((l) => openPageIn(l, p, side));
+    setFocused(pageId(p));
+  };
+
   const ops: PaneOps = {
     activate: (p) => {
       setFocused(p);
       if (isPanel(p) && panel !== p) setPanel(p);
     },
+    openPage,
+    fullPage: (p) => {
+      const page = pageOf(p);
+      if (page === null) return;
+      edit((l) => removePane(l, p));
+      onFullPage(page);
+    },
     close: (p) => {
+      if (isPage(p)) {
+        edit((l) => removePane(l, p));
+        return;
+      }
       if (isTerminal(p)) {
         closeTerm(api, p);
         // The last terminal keeps its place; a new shell starts there when
@@ -261,6 +296,8 @@ export function useRoomLayout({
     panelAction,
     togglePanel,
     toggleTerminal,
+    openPage,
+    pageOpen: (p) => shown.includes(pageId(p)),
     panelShown,
     diffShown: shown.includes("changes"),
     menu,

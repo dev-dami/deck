@@ -3,7 +3,7 @@ import { type Art, artFor, artProcess, type Tokens } from "../backdrop/inks";
 import { type Look, readTokens, useLook } from "../backdrop/live";
 import { useWallpaperVersion } from "../backdrop/wallpaper";
 import { cn } from "../lib/cn";
-import { type Prefs, setPrefs } from "../prefs";
+import { type Prefs, type SidebarSide, setPrefs } from "../prefs";
 import {
   type Aspects,
   type Choice,
@@ -32,7 +32,7 @@ export function LookEditor({ p }: { p: Prefs }) {
   const pick = (a: Partial<Aspects>) => setPrefs(a);
   return (
     <div className="flex flex-col gap-5 py-4">
-      <LookPreview look={look} tokens={tokens} sidebar={p.sidebarSide} wallpaper={p.wallpaper} />
+      <LookPreview look={look} tokens={tokens} sidebar={p.sidebarSide} wallpaper={p.wallpaper} material={p.material} />
       <ThemeGrid look={p} />
       <div className="flex flex-col">
         <h3 className="pb-1 text-[13px]">Mix your own</h3>
@@ -241,6 +241,7 @@ function MaterialSwatch({ material, texture, mode }: { material: string; texture
 function forBox(art: Art): Art {
   if (art.process === "scene") return { ...art, side: 0, margin: 0 };
   if (art.process === "halftone") return { ...art, margin: 4 };
+  if (art.process === "spectrum") return art;
   return { ...art, clear: 0 };
 }
 
@@ -273,8 +274,10 @@ function ProcessSwatch({ process, look, tokens }: { process: PictureProcess; loo
 // The window in miniature, live: the picture (or the person's) through
 // the process, the sidebar of the material on the side the layout puts
 // it, and the room's sheet with a heading in the display face, the
-// person's bubble and the composer. Every token is the window's own.
-function LookPreview({ look, tokens, sidebar, wallpaper }: { look: Look; tokens: Tokens; sidebar: "left" | "right"; wallpaper: string }) {
+// person's bubble and the composer. Every token is the window's own. In
+// smoked glass, the window as it opens: the flush sidebar, and the picture
+// with the question, the composer and the home's cards over it.
+function LookPreview({ look, tokens, sidebar, wallpaper, material }: { look: Look; tokens: Tokens; sidebar: SidebarSide; wallpaper: string; material: string }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const size = useBoxSize(box);
@@ -295,7 +298,17 @@ function LookPreview({ look, tokens, sidebar, wallpaper }: { look: Look; tokens:
       {art !== null && (
         <canvas ref={canvas} aria-hidden className={cn("absolute inset-0 size-full opacity-0 transition-opacity duration-240", drawn && "opacity-100")} />
       )}
-      <div className={cn("absolute inset-0 flex gap-2 p-2", sidebar === "right" && "flex-row-reverse")}>
+      {material === "smoke" ? (
+        <SmokePreview sidebar={sidebar} />
+      ) : (
+      <div className={cn("absolute inset-0 flex gap-2 p-2", sidebar === "right" && "flex-row-reverse", sidebar === "top" && "flex-col")}>
+        {sidebar === "top" ? (
+          <div className="liquid flex h-7 shrink-0 items-center gap-1.5 rounded-(--panel-radius) px-2.5">
+            <span className="h-4 w-14 rounded-(--control-radius) bg-selected" />
+            <span className="h-2 w-10 rounded-full bg-hairline-strong" />
+            <span className="h-2 w-12 rounded-full bg-hairline-strong" />
+          </div>
+        ) : (
         <div className="liquid flex w-[27%] flex-col gap-1.5 rounded-(--panel-radius) p-2.5 pt-3">
           <span className="pb-1 font-semibold text-foreground text-xs">Deck</span>
           <span className="h-5 rounded-(--control-radius) bg-selected" />
@@ -303,7 +316,8 @@ function LookPreview({ look, tokens, sidebar, wallpaper }: { look: Look; tokens:
           <span className="h-2 w-3/5 rounded-full bg-hairline-strong" />
           <span className="mt-auto h-2 w-2/5 rounded-full bg-hairline" />
         </div>
-        <div className="sheet flex min-w-0 flex-1 flex-col gap-2 overflow-hidden rounded-(--sheet-radius) p-3">
+        )}
+        <div className="sheet flex min-h-0 min-w-0 flex-1 flex-col gap-2 overflow-hidden rounded-(--sheet-radius) p-3">
           <h4 className="headline truncate text-xl">
             Fix the lockout <span className="headline-quiet">in deck</span>
           </h4>
@@ -313,6 +327,65 @@ function LookPreview({ look, tokens, sidebar, wallpaper }: { look: Look; tokens:
           <div className="liquid mt-auto flex h-8 items-center rounded-full pr-1 pl-3 text-[11px] text-faint">
             Message the crew
             <span className="liquid-tint ml-auto size-6 rounded-full" />
+          </div>
+        </div>
+      </div>
+      )}
+    </div>
+  );
+}
+
+function SmokePreview({ sidebar }: { sidebar: SidebarSide }) {
+  const card = "liquid flex flex-col gap-1 rounded-[6px] p-1.5";
+  const bar = (w: string, c = "bg-hairline-strong") => <span className={cn("h-1.5 rounded-full", c)} style={{ width: w }} />;
+  return (
+    <div className={cn("absolute inset-0 flex", sidebar === "right" && "flex-row-reverse", sidebar === "top" && "flex-col")}>
+      {sidebar === "top" ? (
+        <div className="flex h-6 shrink-0 items-center gap-2 bg-(--sidebar) px-2.5 shadow-[inset_0_-1px_0_var(--hairline)]">
+          <span className="h-3.5 w-12 rounded-[4px] bg-selected" />
+          {bar("10%")}
+          {bar("8%")}
+        </div>
+      ) : (
+        <div className="flex w-[22%] shrink-0 flex-col gap-1.5 bg-(--sidebar) p-2.5 pt-3 shadow-[inset_-1px_0_0_var(--hairline)]">
+          <span className="h-5 rounded-(--control-radius) bg-selected" />
+          {bar("80%")}
+          {bar("60%")}
+          {bar("70%")}
+          <span className="mt-auto h-2 w-2/5 rounded-full bg-hairline" />
+        </div>
+      )}
+      <div className="flex min-w-0 flex-1 flex-col items-center justify-center gap-2 px-[14%]">
+        <h4 className="w-full truncate font-medium text-foreground text-sm">What should we build?</h4>
+        <div className="liquid flex h-9 w-full items-end rounded-[7px] p-1.5 text-[10px] text-faint">
+          <span className="mb-auto">Ask anything</span>
+          <span className="ml-auto size-4 rounded-full bg-foreground/80" />
+        </div>
+        <div className="grid w-full grid-cols-4 gap-1.5">
+          <div className={cn(card, "col-span-2")}>
+            <span className="text-[8px] text-muted-foreground">Activity</span>
+            <span className="grid grid-cols-12 gap-[2px]">
+              {Array.from({ length: 24 }, (_, i) => (
+                <span key={i} className="aspect-square rounded-[1px] bg-primary" style={{ opacity: [0.12, 0.5, 0.25, 0.9, 0.12, 0.35, 0.7, 0.18][(i * 5) % 8] }} />
+              ))}
+            </span>
+          </div>
+          <div className={cn(card, "col-span-2")}>
+            <span className="text-[8px] text-muted-foreground">Recent threads</span>
+            {bar("70%")}
+            {bar("55%")}
+          </div>
+          <div className={card}>
+            <span className="text-[8px] text-muted-foreground">Usage</span>
+            <span className="font-medium text-[11px] text-foreground leading-none">42%</span>
+          </div>
+          <div className={cn(card, "col-span-2")}>
+            <span className="text-[8px] text-muted-foreground">In progress</span>
+            {bar("50%")}
+          </div>
+          <div className={card}>
+            <span className="text-[8px] text-muted-foreground">This month</span>
+            <span className="font-medium text-[11px] text-primary leading-none">36</span>
           </div>
         </div>
       </div>

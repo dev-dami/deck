@@ -264,8 +264,17 @@ test("themes: a theme from the catalog and an accent recolor the window", async 
   await page.getByRole("button", { name: "Appearance" }).click();
   await page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name: /Tokyo Night/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-palette", "tokyo-night");
-  // The page's sheet takes the theme's canvas; the window behind it is glass.
-  await expect(page.locator("main.center")).toHaveCSS("background-color", "rgb(26, 27, 38)");
+  // The page takes the theme's canvas (on Horizon's smoked glass, as the
+  // veil over the picture).
+  const canvas = await page.evaluate(() => {
+    const probe = document.createElement("span");
+    probe.style.backgroundColor = "var(--canvas)";
+    document.querySelector(".room-sheet")?.append(probe);
+    const c = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return c;
+  });
+  expect(canvas).toBe("rgb(26, 27, 38)");
   await page.getByRole("radiogroup", { name: "Colours" }).getByRole("radio", { name: /GitHub Light/ }).click();
   await expect(page.locator("html")).toHaveAttribute("data-mode", "light");
   await page.getByRole("radiogroup", { name: "Accent" }).getByRole("radio", { name: "Green" }).click();

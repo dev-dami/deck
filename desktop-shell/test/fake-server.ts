@@ -120,6 +120,8 @@ export class FakeDeck {
   readonly native: NativeSub[] = [];
   private readonly stopped = new Set<string>();
   // The races started, with their entrants as given.
+  // Every models.set, in order: the kind, model and effort asked for.
+  readonly modelSets: Array<{ kind: string; model: string; effort: string }> = [];
   readonly races: Array<{ session_id: string; entrants: Array<{ agent: string; model?: string; effort?: string }>; brief: string }> = [];
   private readonly http: http.Server;
   private readonly wss = new WebSocketServer({ noServer: true, maxPayload: 13 << 20 });
@@ -693,14 +695,16 @@ export class FakeDeck {
             { id: "openrouter/reasoner", label: "Reasoner", efforts: ["none", "low", "medium", "high"] },
           ];
         }
+        // Claude gives its default model Claude Code's levels.
         return [
-          { id: "default", label: "Default", selected: true },
+          { id: "default", label: "Default", selected: true, ...(p["kind"] === "claude" ? { efforts: ["low", "medium", "high", "xhigh", "max"] } : {}) },
           { id: "fast", label: "Fast" },
           { id: "deep", label: "Deep", efforts: ["low", "high"] },
         ];
       case "models.set": {
         const t = this.get(p["session_id"]);
-        t.roster = t.roster.map((l) => (l.kind === p["kind"] ? { ...l, model: String(p["model"]) } : l));
+        this.modelSets.push({ kind: String(p["kind"]), model: String(p["model"]), effort: String(p["effort"] ?? "") });
+        t.roster = t.roster.map((l) => (l.kind === p["kind"] ? { ...l, model: String(p["model"]), effort: String(p["effort"] ?? "") } : l));
         this.broadcast("roster.changed", { session_id: t.session.id });
         return {};
       }

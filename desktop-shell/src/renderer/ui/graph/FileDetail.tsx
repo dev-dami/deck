@@ -1,4 +1,5 @@
 import type { Theme } from "@web/protocol";
+import { agentName } from "../../agentName";
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { FileAsk, FileEdit, FileTrack } from "../../fileWork";
@@ -55,7 +56,7 @@ export function FileDetail({
   const Who = ({ name }: { name: string }) => (
     <span className="inline-flex shrink-0 items-center gap-1" style={hueOf(name, kindOf(name))}>
       <Glyph kind={kindOf(name)} theme={theme} className="w-auto text-2xs" />
-      <span className="font-medium text-(--hue)">{name}</span>
+      <span className="font-medium text-(--hue)">{agentName(name)}</span>
     </span>
   );
   return (

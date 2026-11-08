@@ -1,4 +1,5 @@
 import type { Approval, Decision } from "@web/protocol";
+import { agentName } from "../agentName";
 import { approvalSummary, DECISIONS } from "../approvals";
 import { cn } from "../lib/cn";
 import { DiffView } from "./DiffView";
@@ -50,7 +51,7 @@ export function ApprovalCard({
         <ShieldQuestion aria-hidden className="size-3.5 shrink-0 self-center text-warning-foreground" weight="fill" />
         <span className="shrink-0 font-medium text-warning-foreground">{kindLabel(a)}</span>
         <span className="approval-agent min-w-0 truncate text-muted-foreground">
-          <span className="font-mono">{a.agent}</span>
+          <span className="font-mono">{agentName(a.agent)}</span>
           {a.description !== "" && a.description !== approvalSummary(a) ? ` · ${a.description}` : ""}
         </span>
         {count !== undefined && count > 1 && (

@@ -49,7 +49,7 @@ const rowAction =
 
 // The row's leading mark: its state's dot. A row at rest keeps the space,
 // so every title lines up.
-function Mark({ state, label }: { state: Exclude<RoomState, "idle"> | null; label: string }) {
+export function Mark({ state, label }: { state: Exclude<RoomState, "idle"> | null; label: string }) {
   const st = state === null ? null : STATUS[state];
   return (
     <span className="grid size-3 shrink-0 place-items-center">
@@ -127,10 +127,10 @@ export const ThreadRow = memo(function ThreadRow({
   const state = status === undefined || status.state === "idle" ? null : status.state;
   const label = status?.label ?? "";
   const recede = !active && state === null && !unread;
-  // The open thread is a capsule of the selection, lit along its top edge;
-  // hover is a lighter wash. The radius nests in the sidebar's.
+  // The open thread is a soft card of the selection with a faint rim
+  // (styles.css); hover is a lighter wash. The radius is the rows'.
   const surface = cn(
-    "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-[10px] text-left outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+    "session-main group/sidebar-row relative block w-full cursor-pointer overflow-hidden rounded-(--row-radius) text-left outline-none transition-colors select-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     active ? "bg-selected text-foreground" : "hover:bg-hover",
   );
   const mark = <Mark state={state} label={label} />;
@@ -155,7 +155,7 @@ export const ThreadRow = memo(function ThreadRow({
   ) : (
     <span
       className={cn(
-        "session-title min-w-0 flex-1 truncate text-sm",
+        "session-title min-w-0 flex-1 truncate text-[13px]",
         unread && !active ? "font-medium" : "font-normal",
         active || unread ? "text-foreground" : recede ? "text-foreground/75 group-hover/sidebar-row:text-foreground" : "text-foreground/90",
       )}
@@ -283,8 +283,8 @@ export const ThreadRow = memo(function ThreadRow({
   if (variant === "compact") {
     return (
       <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} style={indent}>
-        <div {...common} className={cn(surface, "flex min-h-8 flex-col justify-center py-1 pr-2 pl-1.5")}>
-          <div className="flex h-6 min-w-0 items-center gap-2">
+        <div {...common} className={cn(surface, "flex min-h-7.5 flex-col justify-center py-0.75 pr-2 pl-1.5")}>
+          <div className="flex h-6 min-w-0 items-center gap-1.5">
             {mark}
             {title}
             {branchTag}
@@ -294,7 +294,7 @@ export const ThreadRow = memo(function ThreadRow({
           {label !== "" && (
             <span
               className={cn(
-                "status-label -mt-0.5 truncate pb-0.5 pl-5 text-2xs text-faint",
+                "status-label -mt-1 truncate pb-0.5 pl-4.5 text-2xs text-faint",
                 showLabel ? "block" : "hidden group-focus-within/sidebar-row:block group-hover/sidebar-row:block",
               )}
             >
@@ -308,7 +308,7 @@ export const ThreadRow = memo(function ThreadRow({
   return (
     <li className={cn("session list-none animate-enter", active && "open")} data-session={s.id} data-sub={depth > 0 || undefined} style={indent}>
       <div {...common} className={surface}>
-        <div className={cn("relative flex gap-2 py-2 pr-2 pl-1.5", hideProject ? "h-[3.625rem]" : "h-[4.875rem]")}>
+        <div className={cn("relative flex gap-1.5 py-1.5 pr-2 pl-1.5", hideProject ? "h-[3.25rem]" : "h-[4.375rem]")}>
           <span className="flex h-5 shrink-0 items-center">{mark}</span>
           <div className="flex min-w-0 flex-1 flex-col">
             {!hideProject && (

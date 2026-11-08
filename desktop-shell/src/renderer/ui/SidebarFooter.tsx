@@ -18,14 +18,16 @@ const linkDot: Record<Link, string> = {
 // The connection and the teammates: a dot or a glyph and a word, with no
 // container; the word brightens on hover.
 const quiet =
-  "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1 text-2xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
+  "flex h-6 shrink-0 cursor-pointer items-center gap-1.5 rounded-md px-1 text-2xs text-faint outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring";
 
-// The sidebar's footer: Settings, Usage, Team, the notifications' bell and
-// Close project (Search at the top opens the commands), then an update
-// that waits, the connection and the teammates online. The connection is a
-// live dot and a word; the word gives way when the footer is narrower than
-// 15rem.
+// The sidebar's foot: Settings, Usage, Team, the notifications' bell and
+// Close project as faint glyphs on no ground (Search, the inbox and New
+// thread sit in the header), then an update that waits, the teammates
+// online and the connection, a live dot alone. In the threads' top bar
+// (bar) the same controls sit in a row at the bar's end, the bell opening
+// down.
 export function SidebarFooter({
+  bar = false,
   link,
   settings,
   usage,
@@ -37,6 +39,7 @@ export function SidebarFooter({
   onTeam,
   onDisconnect,
 }: {
+  bar?: boolean;
   link: Link;
   settings: SettingsSection | null;
   usage: boolean;
@@ -50,8 +53,9 @@ export function SidebarFooter({
   onTeam: (() => void) | null;
   onDisconnect: () => void;
 }) {
+  const Box = bar ? "div" : "footer";
   return (
-    <footer className="side-foot @container relative flex h-12 shrink-0 items-center gap-0.5 px-2">
+    <Box className={cn("relative flex shrink-0 items-center gap-px", bar ? "bar-tools" : "side-foot h-10 px-2")}>
       <Button
         variant="ghost-muted"
         size="icon-sm"
@@ -70,21 +74,21 @@ export function SidebarFooter({
           <Users weight={team ? "fill" : "regular"} />
         </Button>
       )}
-      <NotificationBell onSettings={() => onSettings("general")} />
+      <NotificationBell onSettings={() => onSettings("general")} side={bar ? "bottom" : "top"} />
       <Button variant="ghost-muted" size="icon-sm" aria-label="Close project" title="Close project" onClick={onDisconnect}>
         <Unplug />
       </Button>
       {update !== null && (
         <button
           type="button"
-          className="update ml-auto h-6 min-w-0 cursor-pointer truncate rounded-md px-1 font-medium text-2xs text-info-foreground hover:underline"
+          className={cn("update h-6 min-w-0 cursor-pointer truncate rounded-md px-1 font-medium text-2xs text-info-foreground hover:underline", bar ? "ml-1" : "ml-auto")}
           title={`Deck ${update.version} is downloaded. Restart to install it.`}
           onClick={update.onRestart}
         >
           Update ready · Restart
         </button>
       )}
-      <span className={cn("flex shrink-0 items-center gap-1", update === null ? "ml-auto" : "ml-1")}>
+      <span className={cn("flex shrink-0 items-center gap-1", update === null && !bar ? "ml-auto" : "ml-1")}>
         {online !== null && onTeam !== null && (
           <button
             type="button"
@@ -99,9 +103,9 @@ export function SidebarFooter({
         )}
         <button type="button" className={cn("link", quiet)} title={`${LINK_LABEL[link]}. Open the connection settings.`} onClick={() => onSettings("connection")}>
           <span aria-hidden className={cn("dot size-1.5 shrink-0 rounded-full", linkDot[link])} />
-          <span className={cn("sr-only @min-[18rem]:not-sr-only", update !== null && "@min-[18rem]:sr-only")}>{LINK_LABEL[link]}</span>
+          <span className="sr-only">{LINK_LABEL[link]}</span>
         </button>
       </span>
-    </footer>
+    </Box>
   );
 }

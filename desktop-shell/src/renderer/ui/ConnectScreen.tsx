@@ -1,4 +1,4 @@
-import { CornerDownLeft, Laptop, Loader2, Lock, X } from "./icons";
+import { CornerDownLeft, FolderPlus, Laptop, Loader2, Lock, X } from "./icons";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import type { DeckBridge, PairOutcome, SavedServer } from "../../shared/bridge";
 import { parsePairText } from "../connect";
@@ -6,12 +6,11 @@ import { cn } from "../lib/cn";
 import { Button } from "./kit/button";
 import { fieldClass } from "./kit/dialog";
 import { isMac } from "./keys";
-import { ArtFigure } from "./ArtFigure";
 import { ProjectIcon } from "./ProjectIcon";
-import { base, Command, FirstStrip, Headline, Notice, StartFailed, type StartFailure, stagger } from "./Welcome";
+import { ActionCard, base, FirstFrame, FirstHero, FirstNotes, Notice, StartFailed, type StartFailure, stagger } from "./Welcome";
 
-// A list row on the backdrop: a name and its path; the return key shows on
-// the row under the pointer.
+// A list row on a card of glass: a name and its path; the return key shows
+// on the row under the pointer.
 const rowClass =
   "group flex w-full cursor-pointer items-center gap-3 rounded-[10px] px-3 py-2 text-left outline-none transition-colors hover:bg-hover focus-visible:bg-selected disabled:cursor-default disabled:opacity-50";
 
@@ -32,7 +31,7 @@ function Recent({
     setError(await onFolder(dir));
   };
   return (
-    <section aria-label="Open a folder" className="flex flex-col gap-1.5">
+    <section aria-label="Open a folder" className="first-card liquid flex animate-enter flex-col gap-1.5 rounded-(--radius) px-4 py-3" style={stagger(2)}>
       <h2 className="font-medium text-faint text-xs">Recent projects</h2>
       {recent.length > 0 ? (
         <ul className="servers recent -mx-3 flex flex-col" aria-label="Recent folders">
@@ -125,7 +124,7 @@ function Pair({
   const https = text.trim().toLowerCase().startsWith("https:");
 
   return (
-    <section aria-label="Pair" className="flex animate-enter flex-col gap-1.5" style={stagger(1)}>
+    <section aria-label="Pair" className="first-card liquid flex animate-enter flex-col gap-1.5 rounded-(--radius) p-4">
       <h2 className="font-medium text-faint text-xs">Pair with a Deck</h2>
       {servers.length > 0 && (
         <ul className="servers -mx-3 flex flex-col" aria-label="Paired servers">
@@ -201,9 +200,8 @@ function Pair({
 
 // Two ways in: a folder on this computer, which the app's own engine opens
 // (the default), or a Deck on another computer to pair with. The Welcome's
-// family: a dithered picture, here a tall plate on the left, and the words,
-// the action list, the pairing form and the recent folders in one column
-// of type beside it. No glass: nothing here floats.
+// frame and picture: the question, the two ways in as cards of glass, and
+// under them the pairing form and the recent folders, each a card.
 export function ConnectScreen({
   bridge,
   deck,
@@ -259,77 +257,68 @@ export function ConnectScreen({
     setError(await onAdd());
   };
   return (
-    <main className="connect flex h-full flex-col" data-screen="connect">
-      <FirstStrip onBack={onBack} />
-      <div className="flex min-h-0 flex-1">
-        <ArtFigure
-          picture="shower-bridge"
-          className="hidden shrink-0 pb-2 pl-2 md:flex md:w-[38%] lg:w-[42%]"
-          plateClassName="rounded-(--sheet-radius)"
-          creditClassName="px-1"
+    <FirstFrame name="connect" onBack={onBack}>
+      <FirstHero
+        loud="What should we"
+        quiet="work on?"
+        lede={
+          deck === null
+            ? "This install of Deck is missing its engine. Reinstall Deck, or pair with a Deck on another computer."
+            : "Add a project folder, or pair with a Deck that runs in a terminal or on another computer."
+        }
+      />
+      {(message !== null || error !== null || (failure !== null && !failure.noAgents)) && (
+        <FirstNotes>
+          {message !== null && <Notice tone="warning">{message}</Notice>}
+          {error !== null && <Notice tone="error">{error}</Notice>}
+          {failure !== null && !failure.noAgents && (
+            <StartFailed
+              failure={failure}
+              onLogs={() => void bridge.openLogs()}
+              onRetry={() => {
+                setError(null);
+                void onRetry().then(setError);
+              }}
+            />
+          )}
+        </FirstNotes>
+      )}
+      <div className="grid animate-enter gap-3 sm:grid-cols-2" style={stagger(1)}>
+        <ActionCard
+          primary={!pairFirst}
+          className="primary"
+          icon={<FolderPlus />}
+          label={opening === null ? "Add project…" : `Starting Deck in ${base(opening)}…`}
+          hint="A folder on this computer."
+          keys={opening === null ? [mac ? "⌘" : "Ctrl", "O"] : undefined}
+          disabled={deck === null || opening !== null}
+          onClick={() => void addProject()}
         />
-        <div className="connect-card flex min-w-0 flex-1 flex-col overflow-y-auto px-6 md:px-10 lg:px-14">
-          <div className="my-auto flex w-full max-w-[32rem] flex-col gap-8 py-8">
-            <div className="flex animate-enter flex-col gap-4">
-              <Headline loud="What should we" quiet="work on?" className="text-[clamp(2.25rem,4.2vw,3.75rem)] leading-[1]" />
-              <p className="text-pretty text-[14px] text-muted-foreground leading-relaxed">
-                {deck === null
-                  ? "This install of Deck is missing its engine. Reinstall Deck, or pair with a Deck on another computer."
-                  : "Add a project folder, or pair with a Deck that runs in a terminal or on another computer."}
-              </p>
-            </div>
-            {(message !== null || error !== null || (failure !== null && !failure.noAgents)) && (
-              <div className="flex flex-col gap-4">
-                {message !== null && <Notice tone="warning">{message}</Notice>}
-                {error !== null && <Notice tone="error">{error}</Notice>}
-                {failure !== null && !failure.noAgents && (
-                  <StartFailed
-                    failure={failure}
-                    onLogs={() => void bridge.openLogs()}
-                    onRetry={() => {
-                      setError(null);
-                      void onRetry().then(setError);
-                    }}
-                  />
-                )}
-              </div>
-            )}
-            <div className="flex animate-enter flex-col" style={stagger(1)}>
-              <Command
-                primary={!pairFirst}
-                className="primary"
-                label={opening === null ? "Add project…" : `Starting Deck in ${base(opening)}…`}
-                keys={opening === null ? [mac ? "⌘" : "Ctrl", "O"] : undefined}
-                disabled={deck === null || opening !== null}
-                onClick={() => void addProject()}
-              />
-              <Command
-                primary={pairFirst && !pairing}
-                label="Pair with a Deck…"
-                hint={pairing ? undefined : "in a terminal, or on another computer"}
-                aria-expanded={pairing}
-                onClick={() => {
-                  setPairing(true);
-                  requestAnimationFrame(() => document.getElementById("pair-input")?.focus());
-                }}
-              />
-            </div>
-            {pairing && (
-              <Pair
-                bridge={bridge}
-                servers={servers}
-                invite={invite ?? ""}
-                primary={pairFirst}
-                onPaired={onPaired}
-                onOpen={onOpen}
-                onForget={onForget}
-                setError={setError}
-              />
-            )}
-            {deck !== null && <Recent recent={recent} opening={opening} onFolder={onFolder} setError={setError} />}
-          </div>
-        </div>
+        <ActionCard
+          primary={pairFirst && !pairing}
+          icon={<Laptop />}
+          label="Pair with a Deck…"
+          hint={pairing ? "Paste its link or invite line below." : "One in a terminal, or on another computer."}
+          aria-expanded={pairing}
+          onClick={() => {
+            setPairing(true);
+            requestAnimationFrame(() => document.getElementById("pair-input")?.focus());
+          }}
+        />
       </div>
-    </main>
+      {pairing && (
+        <Pair
+          bridge={bridge}
+          servers={servers}
+          invite={invite ?? ""}
+          primary={pairFirst}
+          onPaired={onPaired}
+          onOpen={onOpen}
+          onForget={onForget}
+          setError={setError}
+        />
+      )}
+      {deck !== null && <Recent recent={recent} opening={opening} onFolder={onFolder} setError={setError} />}
+    </FirstFrame>
   );
 }
