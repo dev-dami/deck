@@ -3079,6 +3079,188 @@ body:has(.shell):not(:has(nav.sidebar)) .backdrop {
   transition-duration: 160ms, 160ms, 160ms, 160ms, 90ms;
 }
 
+/* ---- The sidebar (ui/Sidebar.tsx, design-glass.md section 13) ----------
+   After T3 Code's Obsidian theme: in smoked glass the sidebar is darker
+   than the room, nearly black; what is chosen is a card of soft grey with
+   a faint rim, and the rest is quiet grey type. New thread is a card too,
+   at the top. Project tiles lose their colour, the footer sits on a
+   hairline, and the touch of blue is the accent's alone. */
+.sidebar .new-thread {
+  background-color: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
+}
+.sidebar .new-thread:hover {
+  background-color: color-mix(in srgb, var(--text) 10%, transparent);
+}
+:root[data-material="smoke"][data-mode="dark"] {
+  --sidebar: color-mix(in oklab, var(--canvas) 45%, #000);
+}
+:root[data-material="smoke"] .sidebar {
+  --hover: color-mix(in srgb, var(--text) 4.5%, transparent);
+  --selected: color-mix(in srgb, var(--text) 9%, transparent);
+}
+:root[data-material="smoke"] .sidebar :is(.session > [role="button"], .shared-group [role="button"], button) {
+  border-radius: 10px;
+}
+:root[data-material="smoke"] .sidebar .session > [role="button"] {
+  min-height: 2.25rem;
+}
+:root[data-material="smoke"] .sidebar :is(.session.open > [role="button"], [aria-current="page"]) {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent);
+}
+:root[data-material="smoke"] .sidebar .session:not(.open) > [role="button"] .min-w-0.truncate:first-child,
+:root[data-material="smoke"] .sidebar .session:not(.open) > [role="button"] {
+  color: var(--text-muted);
+}
+:root[data-material="smoke"] .sidebar .session:not(.open) > [role="button"]:hover {
+  color: var(--text);
+}
+:root[data-material="smoke"] .sidebar .project-group {
+  padding-top: 0.5rem;
+}
+:root[data-material="smoke"] .sidebar .project-tile {
+  filter: grayscale(1);
+  opacity: 0.75;
+}
+:root[data-material="smoke"] .sidebar .side-foot {
+  box-shadow: inset 0 1px 0 var(--hairline);
+}
+
+/* ---- The first screens (ui/Welcome.tsx FirstFrame, design-glass.md
+   section 12) -----------------------------------------------------------
+   The picture full bleed, a soft pool of the canvas behind the column so
+   the type reads, and the actions and the agents as cards of glass. */
+.first-scrim {
+  background:
+    radial-gradient(64% 70% at 50% 50%, color-mix(in srgb, var(--canvas) 66%, transparent), color-mix(in srgb, var(--canvas) 22%, transparent) 78%),
+    linear-gradient(180deg, color-mix(in srgb, var(--canvas) 60%, transparent), transparent 14%);
+}
+.first-credit {
+  color: var(--text-faint);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+}
+:root[data-mode="light"] .first-credit {
+  text-shadow: 0 1px 2px rgb(255 255 255 / 0.7);
+}
+.first-primary {
+  --glass-rim: color-mix(in srgb, var(--primary) 50%, transparent);
+}
+.first-action {
+  transition:
+    scale 520ms var(--spring),
+    box-shadow 160ms;
+}
+.first-action:not(:disabled):hover {
+  scale: 1.015;
+}
+.first-action:not(:disabled):active {
+  scale: 0.98;
+}
+:root[data-motion="reduced"] .first-action {
+  transition: none;
+}
+
+/* ---- The mode dial (ui/ModePicker.tsx, design-glass.md section 12) ------
+   A knob, not a word: a fine bezel, a domed cap lit from the top left, and
+   a pointer in the mode's hue (--dial-hue) turned to it (--dial-angle) on
+   a spring. In the dial, a scale of ticks, the track and the arc lit to
+   the chosen mode, and the modes round it as stops. */
+.dial-bezel {
+  background: conic-gradient(
+    from 200deg,
+    color-mix(in srgb, var(--text) 30%, transparent),
+    color-mix(in srgb, var(--text) 6%, transparent) 28%,
+    color-mix(in srgb, var(--text) 22%, transparent) 52%,
+    color-mix(in srgb, var(--text) 5%, transparent) 78%,
+    color-mix(in srgb, var(--text) 30%, transparent)
+  );
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  transition: box-shadow 200ms;
+}
+.dial-cap {
+  background: radial-gradient(circle at 34% 28%, color-mix(in srgb, var(--text) 20%, var(--surface-2)), var(--surface-1) 58%, color-mix(in srgb, #000 35%, var(--surface-1)));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.16), inset 0 -2px 3px rgb(0 0 0 / 0.35), 0 0 0 1px rgb(0 0 0 / 0.35), 0 2px 6px -2px rgb(0 0 0 / 0.5);
+}
+:root[data-mode="light"] .dial-cap {
+  background: radial-gradient(circle at 34% 28%, #fff, var(--surface-2) 55%, color-mix(in srgb, #000 10%, var(--surface-2)));
+  box-shadow: inset 0 1px 0 #fff, inset 0 -2px 3px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.12), 0 2px 6px -2px rgb(0 0 0 / 0.2);
+}
+.dial-pointer {
+  transform: rotate(var(--dial-angle, 0deg));
+  transition: transform 560ms var(--spring);
+}
+.dial-tick {
+  background: var(--dial-hue);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--dial-hue) 70%, transparent);
+  transition: background-color 200ms;
+}
+.mode-picker:hover .dial-bezel,
+.mode-picker[aria-expanded="true"] .dial-bezel {
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 2px color-mix(in srgb, var(--dial-hue) 40%, transparent);
+}
+.mode-picker:active .dial-knob {
+  scale: 0.92;
+}
+.mode-picker .dial-knob {
+  transition: scale 480ms var(--spring);
+}
+.dial-face .dial-tick {
+  width: 3px;
+}
+.dial-face:focus-visible {
+  outline: none;
+}
+.dial-face:focus-visible .dial-bezel {
+  box-shadow: 0 0 0 2px var(--ring);
+}
+.dial-scale {
+  stroke: var(--hairline-strong);
+  stroke-width: 1;
+}
+.dial-track,
+.dial-lit {
+  fill: none;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.dial-track {
+  stroke: color-mix(in srgb, var(--text) 9%, transparent);
+}
+.dial-lit {
+  transition:
+    stroke-dasharray 560ms var(--spring),
+    stroke 200ms;
+}
+[data-dragging] .dial-lit,
+[data-dragging] .dial-pointer {
+  transition: none;
+}
+.dial-stop {
+  color: var(--text-muted);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+  box-shadow: inset 0 0 0 1px var(--hairline);
+  transition:
+    background-color 160ms,
+    color 160ms,
+    box-shadow 160ms,
+    scale 520ms var(--spring);
+}
+.dial-stop:hover {
+  color: var(--text);
+  scale: 1.1;
+}
+.dial-stop.on {
+  color: var(--stop-hue);
+  background: color-mix(in srgb, var(--stop-hue) 16%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--stop-hue) 55%, transparent),
+    0 0 16px -3px color-mix(in srgb, var(--stop-hue) 60%, transparent);
+}
+:root[data-motion="reduced"] :is(.dial-pointer, .dial-lit, .dial-stop, .mode-picker .dial-knob) {
+  transition: none;
+}
+
 /* ---- Project tiles (ui/ProjectIcon.tsx, projectIcon.ts) ----------------
    A project's monogram in its own hue, as a quiet tint with a hairline of
    the same hue, so it tells projects apart without becoming a second

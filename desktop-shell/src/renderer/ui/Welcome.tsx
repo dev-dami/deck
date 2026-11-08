@@ -1,5 +1,5 @@
 import { kindColour } from "@web/theme";
-import { ArrowLeft, ArrowRight, Check, CircleAlert, Copy, ExternalLink, Loader2, RefreshCw, RotateCcw, ScrollText } from "./icons";
+import { ArrowLeft, ArrowRight, Check, CircleAlert, Copy, ExternalLink, FolderPlus, Laptop, Loader2, RefreshCw, RotateCcw, ScrollText } from "./icons";
 import { type ComponentProps, type CSSProperties, type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import type { AgentClis, DeckBridge } from "../../shared/bridge";
 import { cn } from "../lib/cn";
@@ -269,7 +269,7 @@ export const rightCols = "md:col-span-6 md:col-start-7 lg:col-span-5 lg:col-star
 // A headline in two tones: what it is, in the full text colour, then,
 // muted, what it is for. `.headline` and `.headline-quiet` let a theme
 // restyle the pair.
-export function Headline({ loud, quiet, className }: { loud: string; quiet: string; className?: string }) {
+export function Headline({ loud, quiet, className, inline = false }: { loud: string; quiet: string; className?: string; inline?: boolean }) {
   return (
     <h1
       className={cn(
@@ -277,7 +277,7 @@ export function Headline({ loud, quiet, className }: { loud: string; quiet: stri
         className,
       )}
     >
-      {loud} <span className="headline-quiet block text-muted-foreground">{quiet}</span>
+      {loud} <span className={cn("headline-quiet text-muted-foreground", !inline && "block")}>{quiet}</span>
     </h1>
   );
 }
@@ -307,6 +307,75 @@ export function FirstStrip({ onBack, className }: { onBack?: (() => void) | unde
 // dithered picture fills the top of the window; under it, the headline
 // holds the lower left and the ways in the right; the crew Deck can drive
 // runs across the foot as a table. No sheet and no cards.
+// One of the first screens' actions as a card of glass (design-glass.md,
+// section 12): an icon, what it does, a line on when, and its keys. The
+// primary one wears the accent on its rim.
+export function ActionCard({
+  icon,
+  label,
+  hint,
+  keys,
+  primary = false,
+  className,
+  ...props
+}: { icon: ReactNode; label: ReactNode; hint?: ReactNode | undefined; keys?: string[] | undefined; primary?: boolean } & ComponentProps<"button">) {
+  return (
+    <button
+      type="button"
+      className={cn(
+        "first-action liquid group/act relative flex min-h-[6.5rem] w-full cursor-pointer flex-col items-start gap-1.5 rounded-(--radius) p-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-50",
+        primary && "first-primary",
+        className,
+      )}
+      {...props}
+    >
+      <span className="flex w-full items-center gap-2">
+        <span aria-hidden className={cn("grid size-7 shrink-0 place-items-center rounded-full [&>svg]:size-4", primary ? "bg-primary/15 text-primary" : "bg-hover text-muted-foreground")}>
+          {icon}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-medium text-[14px] text-foreground">{label}</span>
+        {keys !== undefined && (
+          <span className="flex shrink-0 gap-1 font-normal text-faint text-xs">
+            {keys.map((k) => (
+              <kbd key={k} className="min-w-3 text-center font-sans">
+                {k}
+              </kbd>
+            ))}
+          </span>
+        )}
+      </span>
+      {hint !== undefined && <span className="text-pretty pl-9 text-muted-foreground text-xs leading-relaxed">{hint}</span>}
+      <ArrowRight aria-hidden className="mt-auto ml-auto size-4 text-faint transition-transform duration-150 group-hover/act:translate-x-0.5 group-disabled/act:translate-x-0" />
+    </button>
+  );
+}
+
+// The first screens' frame: the picture full bleed behind everything (the
+// theme's, or another), the strip along the top, and a column of glass in
+// the middle that scrolls when the window is short.
+export function FirstFrame({
+  name,
+  picture,
+  onBack,
+  children,
+}: {
+  name: "welcome" | "connect";
+  picture?: string;
+  onBack?: (() => void) | undefined;
+  children: ReactNode;
+}) {
+  return (
+    <main className={cn("first-screen relative isolate flex h-full flex-col overflow-hidden", name === "welcome" ? "welcome-screen" : "connect")} data-screen={name}>
+      <ArtFigure {...(picture === undefined ? {} : { picture })} className="first-art absolute inset-0 -z-10" plateClassName="" creditClassName="first-credit absolute right-4 bottom-2 z-10" />
+      <div aria-hidden className="first-scrim pointer-events-none absolute inset-0 -z-10" />
+      <FirstStrip onBack={onBack} className="relative" />
+      <div className="relative flex min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto my-auto flex w-full max-w-[46rem] flex-col gap-5 px-6 pt-6 pb-12">{children}</div>
+      </div>
+    </main>
+  );
+}
+
 export function Welcome({
   bridge,
   opening,
@@ -349,52 +418,42 @@ export function Welcome({
     void onRetry().then(setError);
   };
   return (
-    <main className="welcome-screen flex h-full flex-col overflow-y-auto" data-screen="welcome">
-      <FirstStrip onBack={onBack} />
-      <ArtFigure
-        className="mx-2 min-h-[max(9rem,24vh)] flex-1"
-        plateClassName="rounded-(--sheet-radius)"
-        creditClassName="self-end px-1"
-      />
-      <div className={cn("shrink-0 gap-y-8 pt-5 pb-6 md:pt-6 [@media(max-height:680px)]:gap-y-5 [@media(max-height:680px)]:py-3", firstGrid)}>
-        <div className={cn("flex animate-enter flex-col justify-end gap-4", leftCols)}>
-          <Headline loud="One deck" quiet="for all your agents" />
-          <Example />
-        </div>
-        <div className={cn("flex flex-col gap-4 self-end", rightCols)}>
-          <p className="animate-enter text-pretty text-[14px] text-muted-foreground leading-relaxed" style={stagger(1)}>
-            Claude Code, Codex, OpenCode, Antigravity and Pi in one thread. Hand a task to one, split it between two, or race three on the
-            same bug.
-          </p>
-          {!engine && (
-            <Notice tone="warning">
-              Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
-              <code className="font-mono text-foreground/80">DECK_BIN</code>.
-            </Notice>
-          )}
-          {error !== null && <Notice tone="error">{error}</Notice>}
-          {failure !== null && !failure.noAgents && (
-            <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />
-          )}
-          <div className="flex animate-enter flex-col" style={stagger(1)}>
-            <Command
-              primary
-              className="primary"
-              label={opening === null ? "Open a folder…" : `Starting Deck in ${base(opening)}…`}
-              keys={opening === null ? [mac ? "⌘" : "Ctrl", "O"] : undefined}
-              disabled={!engine || opening !== null}
-              onClick={() => {
-                setError(null);
-                void onAdd().then(setError);
-              }}
-            />
-            <Command label="Pair with a Deck…" hint="in a terminal, or on another computer" onClick={onPair} />
-          </div>
-        </div>
-        <div className="md:col-span-12">
-          <Crew clis={clis} checking={checking} failure={failure} onCheck={() => void check(true)} onRetry={retry} />
-        </div>
+    <FirstFrame name="welcome" onBack={onBack}>
+      <div className="flex animate-enter flex-col gap-3">
+        <DeckMark className="h-6 w-auto self-start" />
+        <Headline inline loud="One deck" quiet="for all your agents" className="text-[clamp(1.9rem,3.6vw,2.6rem)] leading-[1.05] tracking-[-0.035em]" />
+        <p className="max-w-[36rem] text-pretty text-[14px] text-muted-foreground leading-relaxed">
+          Claude Code, Codex, OpenCode, Antigravity and Pi in one thread. Hand a task to one, split it between two, or race three on the same bug.
+        </p>
+        <Example />
       </div>
-    </main>
+      {!engine && (
+        <Notice tone="warning">
+          Deck did not find its engine. Run <code className="font-mono text-foreground/80">npm run build:deck</code>, or set{" "}
+          <code className="font-mono text-foreground/80">DECK_BIN</code>.
+        </Notice>
+      )}
+      {error !== null && <Notice tone="error">{error}</Notice>}
+      {failure !== null && !failure.noAgents && <StartFailed failure={failure} onLogs={() => void bridge.openLogs()} onRetry={retry} />}
+      <div className="grid animate-enter gap-2 sm:grid-cols-2" style={stagger(1)}>
+        <ActionCard
+          primary
+          className="primary"
+          icon={<FolderPlus />}
+          label={opening === null ? "Open a folder…" : `Starting Deck in ${base(opening)}…`}
+          hint="Work on a project on this computer. Deck runs its own engine there."
+          keys={opening === null ? [mac ? "⌘" : "Ctrl", "O"] : undefined}
+          disabled={!engine || opening !== null}
+          onClick={() => {
+            setError(null);
+            void onAdd().then(setError);
+          }}
+        />
+        <ActionCard icon={<Laptop />} label="Pair with a Deck…" hint="One you run in a terminal, or on another computer." onClick={onPair} />
+      </div>
+      <div className="first-card liquid animate-enter rounded-(--radius) px-4 pt-2 pb-3" style={stagger(2)}>
+        <Crew clis={clis} checking={checking} failure={failure} onCheck={() => void check(true)} onRetry={retry} />
+      </div>
+    </FirstFrame>
   );
 }

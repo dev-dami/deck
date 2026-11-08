@@ -286,9 +286,6 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
           <HeaderButton label="Hide the sidebar" onClick={actions.onCollapse}>
             {sidebarSide === "left" ? <PanelLeft /> : <PanelRight />}
           </HeaderButton>
-          <HeaderButton label="New thread" onClick={actions.onNew}>
-            <SquarePen />
-          </HeaderButton>
         </span>
       </header>
       {settings !== null ? (
@@ -316,6 +313,12 @@ export function Sidebar({ data, actions, order }: { data: SidebarData; actions: 
       ) : (
         <>
           <div className="relative z-10 flex flex-col gap-0.5 px-2 pt-1 pb-2">
+            {/* The one thing you start here: a card of soft grey. */}
+            <button type="button" className={cn("new-thread mb-1.5", navRow(false))} onClick={actions.onNew}>
+              <SquarePen />
+              New thread
+              <Kbd className="ml-auto border-0 bg-transparent px-0 font-sans text-2xs text-faint">{modKey(data.mac)}N</Kbd>
+            </button>
             <button type="button" className={navRow(false)} onClick={actions.onPalette}>
               <Search />
               Search
